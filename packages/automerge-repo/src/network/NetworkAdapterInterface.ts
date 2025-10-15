@@ -4,6 +4,9 @@ import { EventEmitter } from "eventemitter3"
 import { PeerId } from "../types.js"
 import { Message } from "./messages.js"
 import { StorageId } from "../storage/types.js"
+import { AbortOptions } from "../helpers/abortable.js"
+
+export type NetworkAdapterReadyOptions = AbortOptions
 
 /**
  * Describes a peer intent to the system
@@ -11,7 +14,7 @@ import { StorageId } from "../storage/types.js"
  * isEphemeral: to decide if we bother recording this peer's sync state
  *
  */
-export interface PeerMetadata {
+export type PeerMetadata = {
   storageId?: StorageId
   isEphemeral?: boolean
 }
@@ -33,15 +36,17 @@ export interface NetworkAdapterInterface
   peerMetadata?: PeerMetadata
 
   isReady(): boolean
-  whenReady(): Promise<void>
+  whenReady(options?: NetworkAdapterReadyOptions): Promise<void>
 
   /** Called by the {@link Repo} to start the connection process
    *
    * @argument peerId - the peerId of this repo
    * @argument peerMetadata - how this adapter should present itself to other peers
    */
-  connect(peerId: PeerId, peerMetadata?: PeerMetadata): void
-  // TODO: should this just return a ready promise?
+  connect(
+    peerId: PeerId,
+    options?: PeerMetadata & NetworkAdapterReadyOptions
+  ): Promise<void> | void
 
   /** Called by the {@link Repo} to send a message to a peer
    *
