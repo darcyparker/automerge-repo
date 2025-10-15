@@ -4,7 +4,10 @@ import { EventEmitter } from "eventemitter3"
 import { NetworkAdapterEvents, PeerMetadata } from "../index.js"
 import { PeerId } from "../types.js"
 import { Message } from "./messages.js"
-import { NetworkAdapterInterface } from "./NetworkAdapterInterface.js"
+import type {
+  NetworkAdapterReadyOptions,
+  NetworkAdapterInterface,
+} from "./NetworkAdapterInterface.js"
 
 /** An interface representing some way to connect to other peers
  *
@@ -24,14 +27,17 @@ export abstract class NetworkAdapter
   peerMetadata?: PeerMetadata
 
   abstract isReady(): boolean
-  abstract whenReady(): Promise<void>
+  abstract whenReady(options?: NetworkAdapterReadyOptions): Promise<void>
 
   /** Called by the {@link Repo} to start the connection process
    *
    * @argument peerId - the peerId of this repo
-   * @argument peerMetadata - how this adapter should present itself to other peers
+   * @argument options - PeerMetadata: how this adapter should present itself to other peers, and optional abort signal
    */
-  abstract connect(peerId: PeerId, peerMetadata?: PeerMetadata): void
+  abstract connect(
+    peerId: PeerId,
+    options?: PeerMetadata & NetworkAdapterReadyOptions
+  ): Promise<void> | void
 
   /** Called by the {@link Repo} to send a message to a peer
    *
