@@ -6,9 +6,10 @@ import {
 } from "../network/messages.js"
 import { SyncState } from "@automerge/automerge/slim"
 import { PeerId, DocumentId } from "../types.js"
+import { AbortOptions } from "../helpers/abortable.js"
 
 export abstract class Synchronizer extends EventEmitter<SynchronizerEvents> {
-  abstract receiveMessage(message: RepoMessage): void
+  abstract receiveMessage(message: RepoMessage, options?: AbortOptions): void
 }
 
 export interface SynchronizerEvents {
