@@ -6,6 +6,7 @@ import { DocMessage } from "../network/messages.js"
 import { AutomergeUrl, DocumentId, PeerId } from "../types.js"
 import { DocSynchronizer } from "./DocSynchronizer.js"
 import { Synchronizer } from "./Synchronizer.js"
+import { AbortOptions } from "../helpers/abortable.js"
 
 const log = debug("automerge-repo:collectionsync")
 
@@ -29,16 +30,21 @@ export class CollectionSynchronizer extends Synchronizer {
   }
 
   /** Returns a synchronizer for the given document, creating one if it doesn't already exist.  */
-  #fetchDocSynchronizer(handle: DocHandle<unknown>) {
+  #fetchDocSynchronizer(handle: DocHandle<unknown>, options?: AbortOptions) {
     if (!this.docSynchronizers[handle.documentId]) {
-      this.docSynchronizers[handle.documentId] =
-        this.#initDocSynchronizer(handle)
+      this.docSynchronizers[handle.documentId] = this.#initDocSynchronizer(
+        handle,
+        options
+      )
     }
     return this.docSynchronizers[handle.documentId]
   }
 
   /** Creates a new docSynchronizer and sets it up to propagate messages */
-  #initDocSynchronizer(handle: DocHandle<unknown>): DocSynchronizer {
+  #initDocSynchronizer(
+    handle: DocHandle<unknown>,
+    options?: AbortOptions
+  ): DocSynchronizer {
     const docSynchronizer = new DocSynchronizer({
       handle,
       peerId: this.repo.networkSubsystem.peerId,
@@ -55,7 +61,8 @@ export class CollectionSynchronizer extends Synchronizer {
 
         return this.repo.storageSubsystem.loadSyncState(
           handle.documentId,
-          storageId
+          storageId,
+          options
         )
       },
     })
@@ -83,7 +90,7 @@ export class CollectionSynchronizer extends Synchronizer {
    * When we receive a sync message for a document we haven't got in memory, we
    * register it with the repo and start synchronizing
    */
-  async receiveMessage(message: DocMessage) {
+  async receiveMessage(message: DocMessage, options?: AbortOptions) {
     log(
       `onSyncMessage: ${message.senderId}, ${message.documentId}, ${
         "data" in message ? message.data.byteLength + "bytes" : ""
@@ -126,29 +133,31 @@ export class CollectionSynchronizer extends Synchronizer {
 
     const handle = await this.repo.find(documentId, {
       allowableStates: ["ready", "unavailable", "requesting"],
+      ...options,
     })
-    const docSynchronizer = this.#fetchDocSynchronizer(handle)
+    const docSynchronizer = this.#fetchDocSynchronizer(handle, options)
 
     docSynchronizer.receiveMessage(message)
 
     // Initiate sync with any new peers
     const peers = await this.#documentGenerousPeers(documentId)
     void docSynchronizer.beginSync(
-      peers.filter(peerId => !docSynchronizer.hasPeer(peerId))
+      peers.filter(peerId => !docSynchronizer.hasPeer(peerId)),
+      options
     )
   }
 
   /**
    * Starts synchronizing the given document with all peers that we share it generously with.
    */
-  addDocument(handle: DocHandle<unknown>) {
+  addDocument(handle: DocHandle<unknown>, options?: AbortOptions) {
     // HACK: this is a hack to prevent us from adding the same document twice
     if (this.#docSetUp[handle.documentId]) {
       return
     }
-    const docSynchronizer = this.#fetchDocSynchronizer(handle)
+    const docSynchronizer = this.#fetchDocSynchronizer(handle, options)
     void this.#documentGenerousPeers(handle.documentId).then(peers => {
-      void docSynchronizer.beginSync(peers)
+      void docSynchronizer.beginSync(peers, options)
     })
   }
 
@@ -164,7 +173,7 @@ export class CollectionSynchronizer extends Synchronizer {
   }
 
   /** Adds a peer and maybe starts synchronizing with them */
-  addPeer(peerId: PeerId) {
+  addPeer(peerId: PeerId, options?: AbortOptions) {
     log(`adding ${peerId} & synchronizing with them`)
 
     if (this.#peers.has(peerId)) {
@@ -175,7 +184,7 @@ export class CollectionSynchronizer extends Synchronizer {
     for (const docSynchronizer of Object.values(this.docSynchronizers)) {
       const { documentId } = docSynchronizer
       void this.#shouldShare(peerId, documentId).then(okToShare => {
-        if (okToShare) void docSynchronizer.beginSync([peerId])
+        if (okToShare) void docSynchronizer.beginSync([peerId], options)
       })
     }
   }
