@@ -1,28 +1,71 @@
 import { pause } from "../../src/helpers/pause.js"
-import { Message, NetworkAdapter, PeerId } from "../../src/index.js"
+import {
+  Message,
+  NetworkAdapter,
+  PeerId,
+  PeerMetadata,
+} from "../../src/index.js"
+import { NetworkAdapterReadyOptions } from "../network/NetworkAdapterInterface.js"
+import { AbortError } from "./abortable.js"
+
+type HasAbortHandler = { abortHandler: (this: AbortSignal) => void }
 
 export class DummyNetworkAdapter extends NetworkAdapter {
   #sendMessage?: SendMessageFn
 
   #connected = false
   #ready = false
-  #readyResolver?: () => void
-  #readyPromise: Promise<void> = new Promise<void>(resolve => {
-    this.#readyResolver = resolve
-  })
+
+  #readyPromiseWithResolversAndAbortHandler = new Map<
+    AbortSignal | undefined,
+    PromiseWithResolvers<void> & Partial<HasAbortHandler>
+  >()
 
   isReady() {
     return this.#ready
   }
 
-  whenReady() {
-    return this.#readyPromise
+  whenReady(options?: NetworkAdapterReadyOptions): Promise<void> {
+    if (this.#ready) {
+      return Promise.resolve()
+    }
+    const { signal: signalOrUndefined } = options ?? {}
+    //Get and reuse existing ready `{ promise, resolve, reject, abortHandler }`, or create new ones
+    let { promise, resolve, reject, abortHandler } =
+      this.#readyPromiseWithResolversAndAbortHandler.get(signalOrUndefined) ??
+      (Promise.withResolvers<void>() as PromiseWithResolvers<void> &
+        Partial<HasAbortHandler>)
+
+    if (signalOrUndefined && !abortHandler) {
+      abortHandler = function (this: AbortSignal) {
+        //Note: when abortHandler is called, `this` is the abort signal. Reject with the abort signal's reason
+        reject?.(this.reason)
+      }
+      signalOrUndefined.addEventListener("abort", abortHandler, { once: true })
+    }
+    this.#readyPromiseWithResolversAndAbortHandler.set(signalOrUndefined, {
+      promise,
+      resolve,
+      reject,
+      abortHandler,
+    })
+
+    return promise
   }
 
   #forceReady() {
     if (!this.#ready) {
       this.#ready = true
-      this.#readyResolver?.()
+      //Resolve the 0 or more ready promises (which are reused by signalOrUndefined)
+      for (const [
+        signalOrUndefined,
+        { resolve, abortHandler },
+      ] of this.#readyPromiseWithResolversAndAbortHandler.entries()) {
+        resolve()
+        if (abortHandler && signalOrUndefined)
+          signalOrUndefined.removeEventListener("abort", abortHandler)
+      }
+      this.#readyPromiseWithResolversAndAbortHandler.clear()
     }
   }
 
@@ -39,13 +82,28 @@ export class DummyNetworkAdapter extends NetworkAdapter {
     this.#sendMessage = opts.sendMessage
   }
 
-  connect(peerId: PeerId) {
-    this.#connected = true
+  async connect(
+    peerId: PeerId,
+    options?: PeerMetadata & NetworkAdapterReadyOptions
+  ) {
     this.peerId = peerId
+    await this.whenReady(options)
+    this.#connected = true
   }
 
   disconnect() {
-    this.#connected = false
+    this.#ready = this.#connected = false
+
+    //Reject the 0 or more ready promises (which are reused by signalOrUndefined)
+    for (const [
+      signalOrUndefined,
+      { reject, abortHandler },
+    ] of this.#readyPromiseWithResolversAndAbortHandler.entries()) {
+      reject(new AbortError("disconnected before ready"))
+      if (abortHandler && signalOrUndefined)
+        signalOrUndefined.removeEventListener("abort", abortHandler)
+    }
+    this.#readyPromiseWithResolversAndAbortHandler.clear()
   }
 
   peerCandidate(peerId: PeerId) {

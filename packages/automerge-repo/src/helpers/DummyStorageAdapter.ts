@@ -3,6 +3,8 @@ import {
   StorageAdapterInterface,
   type StorageKey,
 } from "../../src/index.js"
+import type { StorageAdapterLoadOptions } from "../storage/StorageAdapterInterface.js"
+import { AbortError } from "./abortable.js"
 
 export class DummyStorageAdapter implements StorageAdapterInterface {
   #data: Record<string, Uint8Array> = {}
@@ -15,7 +17,13 @@ export class DummyStorageAdapter implements StorageAdapterInterface {
     return key.split(".")
   }
 
-  async loadRange(keyPrefix: StorageKey): Promise<Chunk[]> {
+  async loadRange(
+    keyPrefix: StorageKey,
+    options?: StorageAdapterLoadOptions
+  ): Promise<Chunk[]> {
+    if (options?.signal?.aborted) {
+      return Promise.reject(new AbortError())
+    }
     const range = Object.entries(this.#data)
       .filter(([key, _]) => key.startsWith(this.#keyToString(keyPrefix)))
       .map(([key, data]) => ({ key: this.#stringToKey(key), data }))
@@ -28,7 +36,13 @@ export class DummyStorageAdapter implements StorageAdapterInterface {
       .forEach(([key, _]) => delete this.#data[key])
   }
 
-  async load(key: string[]): Promise<Uint8Array | undefined> {
+  async load(
+    key: string[],
+    options?: StorageAdapterLoadOptions
+  ): Promise<Uint8Array | undefined> {
+    if (options?.signal?.aborted) {
+      return Promise.reject(new AbortError())
+    }
     return new Promise(resolve => resolve(this.#data[this.#keyToString(key)]))
   }
 
