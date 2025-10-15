@@ -13,6 +13,7 @@ import {
   isEphemeralMessage,
   isRepoMessage,
 } from "./messages.js"
+import { AbortOptions } from "../helpers/abortable.js"
 
 type EphemeralMessageSource = `${PeerId}:${SessionId}`
 
@@ -42,8 +43,8 @@ export class NetworkSubsystem extends EventEmitter<NetworkSubsystemEvents> {
     this.adapters.forEach(a => a.disconnect())
   }
 
-  reconnect() {
-    this.adapters.forEach(a => a.connect(this.peerId))
+  async reconnect(): Promise<void> {
+    await Promise.all(this.adapters.map(a => a.connect(this.peerId)))
   }
 
   addNetworkAdapter(networkAdapter: NetworkAdapterInterface) {
@@ -163,8 +164,8 @@ export class NetworkSubsystem extends EventEmitter<NetworkSubsystemEvents> {
     return this.adapters.every(a => a.isReady())
   }
 
-  whenReady = async () => {
-    return Promise.all(this.adapters.map(a => a.whenReady()))
+  whenReady = async (options?: AbortOptions): Promise<void> => {
+    await Promise.all(this.adapters.map(a => a.whenReady(options)))
   }
 }
 

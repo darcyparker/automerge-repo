@@ -9,6 +9,7 @@ import { keyHash, headsHash } from "./keyHash.js"
 import * as Uuid from "uuid"
 import { EventEmitter } from "eventemitter3"
 import { encodeHeads } from "../AutomergeUrl.js"
+import { AbortOptions, isAbortErrorLike } from "../helpers/abortable.js"
 
 type StorageSubsystemEvents = {
   "document-loaded": (arg: {
@@ -18,6 +19,8 @@ type StorageSubsystemEvents = {
     numChanges: number
   }) => void
 }
+
+type LoadOptions = AbortOptions
 
 /**
  * The storage subsystem is responsible for saving and loading Automerge documents to and from
@@ -43,8 +46,11 @@ export class StorageSubsystem extends EventEmitter<StorageSubsystemEvents> {
     this.#storageAdapter = storageAdapter
   }
 
-  async id(): Promise<StorageId> {
-    const storedId = await this.#storageAdapter.load(["storage-adapter-id"])
+  async id(options?: LoadOptions): Promise<StorageId> {
+    const storedId = await this.#storageAdapter.load(
+      ["storage-adapter-id"],
+      options
+    )
 
     let id: StorageId
     if (storedId) {
@@ -71,15 +77,16 @@ export class StorageSubsystem extends EventEmitter<StorageSubsystemEvents> {
   // example, the LocalFirstAuthProvider uses the namespace `LocalFirstAuthProvider`.
 
   /** Loads a value from storage. */
-  async load(
+  load(
     /** Namespace to prevent collisions with other users of the storage subsystem. */
     namespace: string,
 
     /** Key to load. Typically a UUID or other unique identifier, but could be any string. */
-    key: string
+    key: string,
+    options?: LoadOptions
   ): Promise<Uint8Array | undefined> {
     const storageKey = [namespace, key] as StorageKey
-    return await this.#storageAdapter.load(storageKey)
+    return this.#storageAdapter.load(storageKey, options)
   }
 
   /** Saves a value in storage. */
@@ -114,16 +121,19 @@ export class StorageSubsystem extends EventEmitter<StorageSubsystemEvents> {
   /**
    * Loads and combines document chunks from storage, with snapshots first.
    */
-  async loadDocData(documentId: DocumentId): Promise<Uint8Array | null> {
+  async loadDocData(
+    documentId: DocumentId,
+    options?: LoadOptions
+  ): Promise<Uint8Array | null> {
     // Load snapshots first
-    const snapshotChunks = await this.#storageAdapter.loadRange([
-      documentId,
-      "snapshot",
-    ])
-    const incrementalChunks = await this.#storageAdapter.loadRange([
-      documentId,
-      "incremental",
-    ])
+    const snapshotChunks = await this.#storageAdapter.loadRange(
+      [documentId, "snapshot"],
+      options
+    )
+    const incrementalChunks = await this.#storageAdapter.loadRange(
+      [documentId, "incremental"],
+      options
+    )
 
     const binaries: Uint8Array[] = []
     const chunkInfos: ChunkInfo[] = []
@@ -165,9 +175,12 @@ export class StorageSubsystem extends EventEmitter<StorageSubsystemEvents> {
   /**
    * Loads the Automerge document with the given ID from storage.
    */
-  async loadDoc<T>(documentId: DocumentId): Promise<A.Doc<T> | null> {
+  async loadDoc<T>(
+    documentId: DocumentId,
+    options?: LoadOptions
+  ): Promise<A.Doc<T> | null> {
     // Load and combine chunks
-    const binary = await this.loadDocData(documentId)
+    const binary = await this.loadDocData(documentId, options)
     if (!binary) return null
 
     // Load into an Automerge document
@@ -279,14 +292,19 @@ export class StorageSubsystem extends EventEmitter<StorageSubsystemEvents> {
 
   async loadSyncState(
     documentId: DocumentId,
-    storageId: StorageId
+    storageId: StorageId,
+    options?: LoadOptions
   ): Promise<A.SyncState | undefined> {
     const key = [documentId, "sync-state", storageId]
     try {
-      const loaded = await this.#storageAdapter.load(key)
+      const loaded = await this.#storageAdapter.load(key, options)
       return loaded ? A.decodeSyncState(loaded) : undefined
     } catch (e) {
-      this.#log(`Error loading sync state for ${documentId} from ${storageId}`)
+      this.#log(
+        `Error loading sync state for ${documentId} from ${storageId}${
+          isAbortErrorLike(e) ? "because aborted while loading" : ""
+        }`
+      )
       return undefined
     }
   }
