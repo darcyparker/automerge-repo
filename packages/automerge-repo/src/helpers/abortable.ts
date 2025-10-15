@@ -90,6 +90,6 @@ export function abortable<T>(
 /**
  * Include this type in an options object to pass an AbortSignal to a function.
  */
-export interface AbortOptions {
+export type AbortOptions = {
   signal?: AbortSignal
 }
