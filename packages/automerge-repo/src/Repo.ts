@@ -19,7 +19,7 @@ import {
 } from "./DocHandle.js"
 import { RemoteHeadsSubscriptions } from "./RemoteHeadsSubscriptions.js"
 import { headsAreSame } from "./helpers/headsAreSame.js"
-import { throttle } from "./helpers/throttle.js"
+import { asyncThrottle } from "./helpers/throttle.js"
 import {
   NetworkAdapterInterface,
   type PeerMetadata,
@@ -43,6 +43,13 @@ import type {
 } from "./types.js"
 import { abortable, AbortOptions, AbortError } from "./helpers/abortable.js"
 import { FindProgress } from "./FindProgress.js"
+import { foreverPromise } from "./helpers/foreverPromise.js"
+import {
+  abortControllerFactory,
+  abortedAbortController,
+} from "./helpers/abortControllerFactory.js"
+import { noop } from "./helpers/noop.js"
+import { truePromiseFactory } from "./helpers/truePromiseFactory.js"
 
 export type FindProgressWithMethods<T> = FindProgress<T> & {
   untilReady: (allowableStates: string[]) => Promise<DocHandle<T>>
@@ -88,8 +95,8 @@ export class Repo extends EventEmitter<RepoEvents> {
   synchronizer: CollectionSynchronizer
 
   #shareConfig: ShareConfig = {
-    announce: async () => true,
-    access: async () => true,
+    announce: truePromiseFactory,
+    access: truePromiseFactory,
   }
 
   /** maps peer id to to persistence information (storageId, isEphemeral), access by collection synchronizer  */
@@ -101,9 +108,11 @@ export class Repo extends EventEmitter<RepoEvents> {
   #progressCache: Record<DocumentId, FindProgress<any>> = {}
   #saveFns: Record<
     DocumentId,
-    (payload: DocHandleEncodedChangePayload<any>) => void
+    (payload: DocHandleEncodedChangePayload<any>) => Promise<void>
   > = {}
   #idFactory: ((initialHeads: Heads) => Promise<Uint8Array>) | null
+
+  #disposeController: AbortController | null
 
   constructor({
     storage,
@@ -116,6 +125,7 @@ export class Repo extends EventEmitter<RepoEvents> {
     denylist = [],
     saveDebounceRate = 100,
     idFactory,
+    signal,
   }: RepoConfig = {}) {
     super()
     this.#remoteHeadsGossipingEnabled = enableRemoteHeadsGossiping
@@ -129,7 +139,7 @@ export class Repo extends EventEmitter<RepoEvents> {
     if (sharePolicy) {
       this.#shareConfig = {
         announce: sharePolicy,
-        access: async () => true,
+        access: truePromiseFactory,
       }
     }
     if (shareConfig) {
@@ -183,25 +193,26 @@ export class Repo extends EventEmitter<RepoEvents> {
       this.#saveFn = ({ handle, doc }: DocHandleEncodedChangePayload<any>) => {
         let fn = this.#saveFns[handle.documentId]
         if (!fn) {
-          fn = throttle(
-            ({ doc, handle }: DocHandleEncodedChangePayload<any>) => {
-              void this.storageSubsystem!.saveDoc(handle.documentId, doc)
-            },
+          fn = this.#saveFns[handle.documentId] = asyncThrottle(
+            ({
+              doc,
+              handle,
+            }: DocHandleEncodedChangePayload<any>): Promise<void> =>
+              this.storageSubsystem!.saveDoc(handle.documentId, doc),
             this.#saveDebounceRate
           )
-          this.#saveFns[handle.documentId] = fn
         }
         fn({ handle, doc })
       }
     } else {
-      this.#saveFn = () => {}
+      this.#saveFn = noop
     }
 
     // NETWORK
     // The network subsystem deals with sending and receiving messages to and from peers.
 
     const myPeerMetadata: Promise<PeerMetadata> = (async () => ({
-      storageId: await storageSubsystem?.id(),
+      storageId: await storageSubsystem?.id({ signal: this.disposeSignal }),
       isEphemeral,
     }))()
 
@@ -315,11 +326,28 @@ export class Repo extends EventEmitter<RepoEvents> {
         }
       )
     }
+
+    //Create abortController, which is used for:
+    //- monitoring optional parent signal for signal to self-dispose
+    //- signaling this Repo instance was disposed
+    //- signaling to async operations to stop work
+    this.#disposeController = abortControllerFactory(signal)
+    this.#disposeController.signal.addEventListener(
+      "abort",
+      () => {
+        //Mark this Repo instance as disposed
+        this.#disposeController = null
+      },
+      { once: true }
+    )
   }
 
   // The `document` event is fired by the DocCollection any time we create a new document or look
   // up a document by ID. We listen for it in order to wire up storage and network synchronization.
-  #registerHandleWithSubsystems(handle: DocHandle<any>) {
+  #registerHandleWithSubsystems(
+    handle: DocHandle<any>,
+    options?: AbortOptions
+  ) {
     if (this.storageSubsystem) {
       // Add save function as a listener if it's not already registered
       const existingListeners = handle.listeners("heads-changed")
@@ -330,10 +358,10 @@ export class Repo extends EventEmitter<RepoEvents> {
     }
 
     // Register the document with the synchronizer. This advertises our interest in the document.
-    this.synchronizer.addDocument(handle)
+    this.synchronizer.addDocument(handle, options)
   }
 
-  #receiveMessage(message: RepoMessage) {
+  #receiveMessage(message: RepoMessage, options?: AbortOptions) {
     switch (message.type) {
       case "remote-subscription-change":
         if (this.#remoteHeadsGossipingEnabled) {
@@ -349,7 +377,7 @@ export class Repo extends EventEmitter<RepoEvents> {
       case "request":
       case "ephemeral":
       case "doc-unavailable":
-        this.synchronizer.receiveMessage(message).catch(err => {
+        this.synchronizer.receiveMessage(message, options).catch(err => {
           console.log("error receiving message", { err, message })
         })
     }
@@ -357,7 +385,7 @@ export class Repo extends EventEmitter<RepoEvents> {
 
   #throttledSaveSyncStateHandlers: Record<
     StorageId,
-    (payload: SyncStatePayload) => void
+    (payload: SyncStatePayload) => Promise<void>
   > = {}
 
   /** saves sync state throttled per storage id, if a peer doesn't have a storage id it's sync state is not persisted */
@@ -375,14 +403,13 @@ export class Repo extends EventEmitter<RepoEvents> {
 
     let handler = this.#throttledSaveSyncStateHandlers[storageId]
     if (!handler) {
-      handler = this.#throttledSaveSyncStateHandlers[storageId] = throttle(
-        ({ documentId, syncState }: SyncStatePayload) => {
-          void this.storageSubsystem!.saveSyncState(
+      handler = this.#throttledSaveSyncStateHandlers[storageId] = asyncThrottle(
+        ({ documentId, syncState }: SyncStatePayload) =>
+          this.storageSubsystem!.saveSyncState(
             documentId,
             storageId,
             syncState
-          )
-        },
+          ),
         this.#saveDebounceRate
       )
     }
@@ -405,6 +432,19 @@ export class Repo extends EventEmitter<RepoEvents> {
     const handle = new DocHandle<T>(documentId)
     this.#handleCache[documentId] = handle
     return handle
+  }
+
+  public dispose(): void {
+    this.#disposeController?.abort()
+    this.#disposeController = null //pre-emptively dispose before 'abort' listener
+  }
+
+  get isDisposed(): boolean {
+    return !!this.#disposeController
+  }
+
+  get disposeSignal(): AbortSignal {
+    return this.#disposeController?.signal ?? abortedAbortController.signal
   }
 
   /** Returns all the handles we have cached. */
@@ -450,7 +490,7 @@ export class Repo extends EventEmitter<RepoEvents> {
    * empty object `{}` unless an initial value is provided. Its documentId is generated by the
    * system. we emit a `document` event to advertise interest in the document.
    */
-  create<T>(initialValue?: T): DocHandle<T> {
+  create<T>(initialValue?: T, options?: AbortOptions): DocHandle<T> {
     let initialDoc: Automerge.Doc<T>
     if (initialValue) {
       initialDoc = Automerge.from(initialValue)
@@ -464,7 +504,9 @@ export class Repo extends EventEmitter<RepoEvents> {
       documentId,
     }) as DocHandle<T>
 
-    this.#registerHandleWithSubsystems(handle)
+    const abortOptions = this.#createAbortOptions(options)
+
+    this.#registerHandleWithSubsystems(handle, abortOptions)
 
     handle.update(() => {
       return initialDoc
@@ -485,7 +527,10 @@ export class Repo extends EventEmitter<RepoEvents> {
    * @hidden
    * @experimental
    */
-  async create2<T>(initialValue?: T): Promise<DocHandle<T>> {
+  async create2<T>(
+    initialValue?: T,
+    options?: AbortOptions
+  ): Promise<DocHandle<T>> {
     // Note that the reason this method is hidden and experimental is because it is async,
     // and it is async because we want to be able to call the #idGenerator, which is async.
     // This is all really in service of wiring up keyhive and we probably need to find a
@@ -506,7 +551,8 @@ export class Repo extends EventEmitter<RepoEvents> {
       documentId,
     }) as DocHandle<T>
 
-    this.#registerHandleWithSubsystems(handle)
+    const abortOptions = this.#createAbortOptions(options)
+    this.#registerHandleWithSubsystems(handle, abortOptions)
 
     handle.update(() => {
       return initialDoc
@@ -528,7 +574,7 @@ export class Repo extends EventEmitter<RepoEvents> {
    * be notified of the newly created DocHandle.
    *
    */
-  clone<T>(clonedHandle: DocHandle<T>) {
+  clone<T>(clonedHandle: DocHandle<T>, options?: AbortOptions) {
     if (!clonedHandle.isReady()) {
       throw new Error(
         `Cloned handle is not yet in ready state.
@@ -537,7 +583,7 @@ export class Repo extends EventEmitter<RepoEvents> {
     }
 
     const sourceDoc = clonedHandle.doc()
-    const handle = this.create<T>()
+    const handle = this.create<T>(undefined, options)
 
     handle.update(() => {
       // we replace the document with the new cloned one
@@ -627,13 +673,14 @@ export class Repo extends EventEmitter<RepoEvents> {
     progressSignal.notify(initial)
 
     // Start the loading process
-    void this.#loadDocumentWithProgress(
+    void this.#loadDocumentWithProgress({
       id,
       documentId,
       handle,
       progressSignal,
-      signal ? abortable(new Promise(() => {}), signal) : new Promise(() => {})
-    )
+      abortPromise: signal ? abortable(foreverPromise, signal) : foreverPromise,
+      signal,
+    })
 
     const result = {
       ...initial,
@@ -644,15 +691,38 @@ export class Repo extends EventEmitter<RepoEvents> {
     return result
   }
 
-  async #loadDocumentWithProgress<T>(
-    id: AnyDocumentId,
-    documentId: DocumentId,
-    handle: DocHandle<T>,
+  /**
+   * Factory to create abortSignal options from disposeSignal and signal
+   */
+  #createAbortOptions(options?: AbortOptions): Required<AbortOptions> {
+    const abortOptions = {
+      signal: AbortSignal.any([
+        this.disposeSignal,
+        ...(options?.signal ? [options.signal] : []),
+      ]),
+    }
+    if (abortOptions.signal.aborted) {
+      throw new AbortError()
+    }
+    return abortOptions
+  }
+
+  async #loadDocumentWithProgress<T>({
+    id,
+    documentId,
+    handle,
+    progressSignal,
+    abortPromise,
+    signal,
+  }: {
+    id: AnyDocumentId
+    documentId: DocumentId
+    handle: DocHandle<T>
     progressSignal: {
       notify: (progress: FindProgress<T>) => void
-    },
+    }
     abortPromise: Promise<never>
-  ) {
+  } & AbortOptions) {
     try {
       progressSignal.notify({
         state: "loading" as const,
@@ -660,8 +730,10 @@ export class Repo extends EventEmitter<RepoEvents> {
         handle,
       })
 
+      const abortOptions = this.#createAbortOptions({ signal })
+
       const loadingPromise = await (this.storageSubsystem
-        ? this.storageSubsystem.loadDoc(handle.documentId)
+        ? this.storageSubsystem.loadDoc(handle.documentId, abortOptions)
         : Promise.resolve(null))
 
       const loadedDoc = await Promise.race([loadingPromise, abortPromise])
@@ -675,7 +747,10 @@ export class Repo extends EventEmitter<RepoEvents> {
           handle,
         })
       } else {
-        await Promise.race([this.networkSubsystem.whenReady(), abortPromise])
+        await Promise.race([
+          this.networkSubsystem.whenReady(abortOptions),
+          abortPromise,
+        ])
         handle.request()
         progressSignal.notify({
           state: "loading" as const,
@@ -684,9 +759,12 @@ export class Repo extends EventEmitter<RepoEvents> {
         })
       }
 
-      this.#registerHandleWithSubsystems(handle)
+      this.#registerHandleWithSubsystems(handle, abortOptions)
 
-      await Promise.race([handle.whenReady([READY, UNAVAILABLE]), abortPromise])
+      await Promise.race([
+        handle.whenReady([READY, UNAVAILABLE], abortOptions),
+        abortPromise,
+      ])
 
       if (handle.state === UNAVAILABLE) {
         const unavailableProgress = {
@@ -720,17 +798,14 @@ export class Repo extends EventEmitter<RepoEvents> {
     id: AnyDocumentId,
     options: RepoFindOptions & AbortOptions = {}
   ): Promise<DocHandle<T>> {
-    const { allowableStates = ["ready"], signal } = options
+    const { allowableStates = ["ready"] } = options
 
-    // Check if already aborted
-    if (signal?.aborted) {
-      throw new AbortError()
-    }
+    const abortOptions = this.#createAbortOptions(options)
 
-    const progress = this.findWithProgress<T>(id, { signal })
+    const progress = this.findWithProgress<T>(id, abortOptions)
 
     if ("subscribe" in progress) {
-      this.#registerHandleWithSubsystems(progress.handle)
+      this.#registerHandleWithSubsystems(progress.handle, abortOptions)
       return new Promise((resolve, reject) => {
         const unsubscribe = progress.subscribe(state => {
           if (allowableStates.includes(state.handle.state)) {
@@ -743,6 +818,16 @@ export class Repo extends EventEmitter<RepoEvents> {
             unsubscribe()
             reject(state.error)
           }
+          abortOptions.signal?.removeEventListener("abort", abortHandler)
+        })
+        const abortHandler = function (this: AbortSignal): void {
+          unsubscribe()
+          reject(
+            new AbortError(this.reason?.message ?? this.reason ?? "aborted")
+          )
+        }
+        abortOptions.signal?.addEventListener("abort", abortHandler, {
+          once: true,
         })
       })
     } else {
@@ -750,7 +835,7 @@ export class Repo extends EventEmitter<RepoEvents> {
         return progress.handle
       }
       // If the handle isn't ready, wait for it and then return it
-      await progress.handle.whenReady([READY, UNAVAILABLE])
+      await progress.handle.whenReady([READY, UNAVAILABLE], abortOptions)
       if (
         progress.handle.state === "unavailable" &&
         !allowableStates.includes(UNAVAILABLE)
@@ -764,7 +849,12 @@ export class Repo extends EventEmitter<RepoEvents> {
   /**
    * Loads a document without waiting for ready state
    */
-  async #loadDocument<T>(documentId: DocumentId): Promise<DocHandle<T>> {
+  async #loadDocument<T>(
+    documentId: DocumentId,
+    options?: AbortOptions
+  ): Promise<DocHandle<T>> {
+    const abortOptions = this.#createAbortOptions(options)
+
     // If we have the handle cached, return it
     if (this.#handleCache[documentId]) {
       return this.#handleCache[documentId]
@@ -772,8 +862,9 @@ export class Repo extends EventEmitter<RepoEvents> {
 
     // If we don't already have the handle, make an empty one and try loading it
     const handle = this.#getHandle<T>({ documentId })
+
     const loadedDoc = await (this.storageSubsystem
-      ? this.storageSubsystem.loadDoc(handle.documentId)
+      ? this.storageSubsystem.loadDoc(handle.documentId, abortOptions)
       : Promise.resolve(null))
 
     if (loadedDoc) {
@@ -789,7 +880,7 @@ export class Repo extends EventEmitter<RepoEvents> {
       handle.request()
     }
 
-    this.#registerHandleWithSubsystems(handle)
+    this.#registerHandleWithSubsystems(handle, abortOptions)
     return handle
   }
 
@@ -803,20 +894,21 @@ export class Repo extends EventEmitter<RepoEvents> {
     options: RepoFindOptions & AbortOptions = {}
   ): Promise<DocHandle<T>> {
     const documentId = interpretAsDocumentId(id)
-    const { allowableStates, signal } = options
+    const { allowableStates } = options
+    const abortOptions = this.#createAbortOptions(options)
 
     return abortable(
       (async () => {
-        const handle = await this.#loadDocument<T>(documentId)
+        const handle = await this.#loadDocument<T>(documentId, abortOptions)
         if (!allowableStates) {
           await handle.whenReady([READY, UNAVAILABLE])
-          if (handle.state === UNAVAILABLE && !signal?.aborted) {
+          if (handle.state === UNAVAILABLE && !abortOptions.signal.aborted) {
             throw new Error(`Document ${id} is unavailable`)
           }
         }
         return handle
       })(),
-      signal
+      abortOptions.signal
     )
   }
 
@@ -853,7 +945,7 @@ export class Repo extends EventEmitter<RepoEvents> {
   /**
    * Imports document binary into the repo.
    * @param binary - The binary to import
-   * @param args - Optional argument specifying what document ID to import into,
+   * @param options - Optional argument specifying what document ID to import into,
    *              if at all possible avoid using this, see the remarks below
    *
    * @remarks
@@ -866,18 +958,23 @@ export class Repo extends EventEmitter<RepoEvents> {
    * serialization format for documents and IDs and handles the boilerplate of
    * importing and exporting these bundles.
    */
-  import<T>(binary: Uint8Array, args?: { docId?: DocumentId }): DocHandle<T> {
-    const docId = args?.docId
+  import<T>(
+    binary: Uint8Array,
+    options?: { docId?: DocumentId } & AbortOptions
+  ): DocHandle<T> {
+    const docId = options?.docId
+    const abortOptions = this.#createAbortOptions(options)
     if (docId != null) {
       const handle = this.#getHandle<T>({ documentId: docId })
       handle.update(doc => {
         return Automerge.loadIncremental(doc, binary)
       })
-      this.#registerHandleWithSubsystems(handle)
+
+      this.#registerHandleWithSubsystems(handle, abortOptions)
       return handle
     } else {
       const doc = Automerge.load<T>(binary)
-      const handle = this.create<T>()
+      const handle = this.create<T>(undefined, abortOptions)
       handle.update(() => {
         return Automerge.clone(doc)
       })
@@ -1027,6 +1124,11 @@ export interface RepoConfig {
    * @hidden
    */
   idFactory?: (initialHeads: Heads) => Promise<Uint8Array>
+
+  /**
+   * Repo is disposed if abort is received by this abort signal
+   */
+  signal?: AbortSignal
 }
 
 /** A function that determines whether we should share a document with a peer
