@@ -35,6 +35,8 @@ import { TestDoc } from "./types.js"
 import { StorageId, StorageKey } from "../src/storage/types.js"
 import { FindProgress } from "../src/FindProgress.js"
 import { AbortError } from "../src/helpers/abortable.js"
+import { truePromiseFactory } from "../src/helpers/truePromiseFactory.js"
+import { falsePromiseFactory } from "../src/helpers/falsePromiseFactory.js"
 
 describe("Repo", () => {
   describe("constructor", () => {
@@ -219,7 +221,7 @@ describe("Repo", () => {
        */
       const alice = new Repo({
         peerId: "alice" as PeerId,
-        sharePolicy: async () => false,
+        sharePolicy: falsePromiseFactory,
       })
       const bob = new Repo({ peerId: "bob" as PeerId })
       const [aliceToBob, bobToAlice] = DummyNetworkAdapter.createConnectedPair()
@@ -258,7 +260,7 @@ describe("Repo", () => {
     it("should not return an unavailable handle on second request", async () => {
       const alice = new Repo({
         peerId: "alice" as PeerId,
-        sharePolicy: async () => true,
+        sharePolicy: truePromiseFactory,
       })
       await assert.rejects(() =>
         alice.find("automerge:uKK1dJ4vE3E6r27kz5bsFaCykvM" as AutomergeUrl)
@@ -871,7 +873,7 @@ describe("Repo", () => {
             network,
             storage: new DummyStorageAdapter(),
             peerId: `peer-${idx}` as PeerId,
-            sharePolicy: async () => true,
+            sharePolicy: truePromiseFactory,
           })
           repos.push(repo)
         }
@@ -1204,7 +1206,7 @@ describe("Repo", () => {
       const a = new Repo({
         network: [new MessageChannelNetworkAdapter(ab)],
         peerId: "a" as PeerId,
-        sharePolicy: async () => true,
+        sharePolicy: truePromiseFactory,
       })
 
       await expect(a.find<TestDoc>(url)).rejects.toThrow(
@@ -1785,8 +1787,8 @@ describe("Repo", () => {
     describe("the legacy API", () => {
       it("should announce documents to peers for whom the sharePolicy returns true", async () => {
         const { alice, bob } = await twoPeers({
-          alice: { sharePolicy: async () => true },
-          bob: { sharePolicy: async () => true },
+          alice: { sharePolicy: truePromiseFactory },
+          bob: { sharePolicy: truePromiseFactory },
         })
         const handle = alice.create({ foo: "bar" })
 
@@ -1802,8 +1804,8 @@ describe("Repo", () => {
 
       it("should not annouce documents to peers for whom the sharePolicy returns false", async () => {
         const { alice, bob } = await twoPeers({
-          alice: { sharePolicy: async () => false },
-          bob: { sharePolicy: async () => true },
+          alice: { sharePolicy: falsePromiseFactory },
+          bob: { sharePolicy: truePromiseFactory },
         })
         const handle = alice.create({ foo: "bar" })
 
@@ -1817,8 +1819,8 @@ describe("Repo", () => {
 
       it("should respond to direct requests for document where the sharePolicy returns false", async () => {
         const { alice, bob } = await twoPeers({
-          alice: { sharePolicy: async () => false },
-          bob: { sharePolicy: async () => true },
+          alice: { sharePolicy: falsePromiseFactory },
+          bob: { sharePolicy: truePromiseFactory },
         })
         await connect(alice, bob)
 
@@ -1831,11 +1833,11 @@ describe("Repo", () => {
       const { alice, bob } = await twoPeers({
         alice: {
           shareConfig: {
-            announce: async () => false,
-            access: async () => true,
+            announce: falsePromiseFactory,
+            access: truePromiseFactory,
           },
         },
-        bob: { sharePolicy: async () => true },
+        bob: { sharePolicy: truePromiseFactory },
       })
 
       const aliceHandle = alice.create({ foo: "bar" })
@@ -1846,11 +1848,11 @@ describe("Repo", () => {
       const { alice, bob } = await twoPeers({
         alice: {
           shareConfig: {
-            announce: async () => true,
-            access: async () => false,
+            announce: truePromiseFactory,
+            access: falsePromiseFactory,
           },
         },
-        bob: { sharePolicy: async () => true },
+        bob: { sharePolicy: truePromiseFactory },
       })
       await connect(alice, bob)
 
@@ -1865,11 +1867,11 @@ describe("Repo", () => {
       const { alice, bob } = await twoPeers({
         alice: {
           shareConfig: {
-            announce: async () => false,
-            access: async () => false,
+            announce: falsePromiseFactory,
+            access: falsePromiseFactory,
           },
         },
-        bob: { sharePolicy: async () => false },
+        bob: { sharePolicy: falsePromiseFactory },
       })
 
       const aliceHandle = alice.create({ foo: "bar" })
