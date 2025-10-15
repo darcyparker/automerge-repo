@@ -19,7 +19,8 @@ import {
 } from "../network/messages.js"
 import { PeerId } from "../types.js"
 import { Synchronizer } from "./Synchronizer.js"
-import { throttle } from "../helpers/throttle.js"
+import { asyncThrottle } from "../helpers/throttle.js"
+import { AbortOptions, isAbortErrorLike } from "../helpers/abortable.js"
 
 type PeerDocumentStatus = "unknown" | "has" | "unavailable" | "wants"
 
@@ -77,7 +78,10 @@ export class DocSynchronizer extends Synchronizer {
 
     handle.on(
       "change",
-      throttle(() => this.#syncWithPeers(), this.syncDebounceRate)
+      asyncThrottle(
+        (options?: AbortOptions) => this.#syncWithPeers(options),
+        this.syncDebounceRate
+      ) as () => void
     )
 
     handle.on("ephemeral-message-outbound", payload =>
@@ -100,9 +104,9 @@ export class DocSynchronizer extends Synchronizer {
 
   /// PRIVATE
 
-  async #syncWithPeers() {
+  async #syncWithPeers(options?: AbortOptions) {
     try {
-      await this.#handle.whenReady()
+      await this.#handle.whenReady([READY], options)
       const doc = this.#handle.doc() // XXX THIS ONE IS WEIRD
       this.#peers.forEach(peerId => this.#sendSyncMessage(peerId, doc))
     } catch (e) {
@@ -233,17 +237,19 @@ export class DocSynchronizer extends Synchronizer {
     return this.#peers.includes(peerId)
   }
 
-  async beginSync(peerIds: PeerId[]) {
+  async beginSync(peerIds: PeerId[], options?: AbortOptions) {
     void this.#handle
-      .whenReady([READY, REQUESTING, UNAVAILABLE])
+      .whenReady([READY, REQUESTING, UNAVAILABLE], options)
       .then(() => {
         this.#syncStarted = true
         this.#checkDocUnavailable()
       })
       .catch(e => {
-        console.log("caught whenready", e)
-        this.#syncStarted = true
-        this.#checkDocUnavailable()
+        if (!isAbortErrorLike(e)) {
+          console.log("caught whenready", e)
+          this.#syncStarted = true
+          this.#checkDocUnavailable()
+        }
       })
 
     const peersWithDocument = this.#peers.some(peerId => {
@@ -251,7 +257,7 @@ export class DocSynchronizer extends Synchronizer {
     })
 
     if (peersWithDocument) {
-      await this.#handle.whenReady()
+      await this.#handle.whenReady([READY], options)
     }
 
     peerIds.forEach(peerId => {
@@ -268,7 +274,7 @@ export class DocSynchronizer extends Synchronizer {
         // At this point if we don't have anything in our storage, we need to use an empty doc to sync
         // with; but we don't want to surface that state to the front end
         this.#handle
-          .whenReady([READY, REQUESTING, UNAVAILABLE])
+          .whenReady([READY, REQUESTING, UNAVAILABLE], options)
           .then(() => {
             const doc = this.#handle.isReady()
               ? this.#handle.doc()
@@ -289,7 +295,9 @@ export class DocSynchronizer extends Synchronizer {
             this.#sendSyncMessage(peerId, doc ?? A.init<unknown>())
           })
           .catch(err => {
-            this.#log(`Error loading doc for ${peerId}: ${err}`)
+            if (!isAbortErrorLike(err)) {
+              this.#log(`Error loading doc for ${peerId}: ${err}`)
+            }
           })
       })
     })
