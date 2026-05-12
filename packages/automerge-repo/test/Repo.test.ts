@@ -43,7 +43,7 @@ import { getRandomItem } from "./helpers/getRandomItem.js"
 import { TestDoc } from "./types.js"
 import { StorageId, StorageKey } from "../src/storage/types.js"
 import { FindProgress } from "../src/FindProgress.js"
-import { AbortError, isAbortErrorLike } from "../src/helpers/withAbort.js"
+import { isAbortErrorLike } from "../src/helpers/withAbort.js"
 
 describe("Repo", () => {
   describe("constructor", () => {
@@ -2092,9 +2092,14 @@ describe("Repo.find() abort behavior", () => {
     const controller = new AbortController()
     controller.abort()
 
-    await expect(
-      repo.find(generateAutomergeUrl(), { signal: controller.signal })
-    ).rejects.toThrow(AbortError)
+    // find() uses signal.throwIfAborted(), which throws signal.reason. With
+    // a default `controller.abort()` (no args) the reason is a platform
+    // DOMException with name "AbortError" — AbortError-like but not an
+    // instanceof our AbortError class. The spec only requires `name === "AbortError"`.
+    const rejection = await repo
+      .find(generateAutomergeUrl(), { signal: controller.signal })
+      .catch(e => e)
+    expect(isAbortErrorLike(rejection)).toBe(true)
   })
 
   it("can abort while waiting for ready state", async () => {

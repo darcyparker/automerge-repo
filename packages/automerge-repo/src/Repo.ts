@@ -41,7 +41,7 @@ import type {
   DocumentId,
   PeerId,
 } from "./types.js"
-import { withAbort, AbortOptions, AbortError } from "./helpers/withAbort.js"
+import { withAbort, AbortOptions } from "./helpers/withAbort.js"
 import { FindProgress } from "./FindProgress.js"
 import { RefImpl } from "./refs/ref.js"
 import { foreverPromise } from "./helpers/foreverPromise.js"
@@ -735,10 +735,10 @@ export class Repo extends EventEmitter<RepoEvents> {
   ): Promise<DocHandle<T>> {
     const { allowableStates = ["ready"], signal } = options
 
-    // Check if already aborted
-    if (signal?.aborted) {
-      throw new AbortError()
-    }
+    // Already-aborted fast path. `throwIfAborted()` propagates `signal.reason`
+    // (preserves a custom reason from `controller.abort(reason)`); a manual
+    // `throw new AbortError()` here would discard it.
+    signal?.throwIfAborted()
 
     const progress = this.findWithProgress<T>(id, { signal })
 
