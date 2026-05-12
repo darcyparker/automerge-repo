@@ -16,7 +16,7 @@ import {
   AbortError,
   AbortOptions,
   isAbortErrorLike,
-} from "./helpers/abortable.js"
+} from "./helpers/withAbort.js"
 import type { PathInput, InferRefType, Ref } from "./refs/types.js"
 
 /**

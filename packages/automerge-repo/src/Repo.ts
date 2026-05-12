@@ -41,7 +41,7 @@ import type {
   DocumentId,
   PeerId,
 } from "./types.js"
-import { abortable, AbortOptions, AbortError } from "./helpers/abortable.js"
+import { withAbort, AbortOptions, AbortError } from "./helpers/withAbort.js"
 import { FindProgress } from "./FindProgress.js"
 import { RefImpl } from "./refs/ref.js"
 import { foreverPromise } from "./helpers/foreverPromise.js"
@@ -645,7 +645,7 @@ export class Repo extends EventEmitter<RepoEvents> {
       documentId,
       handle,
       progressSignal,
-      signal ? abortable(foreverPromise, signal) : foreverPromise
+      signal ? withAbort(foreverPromise, signal) : foreverPromise
     )
 
     const result = {
@@ -818,7 +818,7 @@ export class Repo extends EventEmitter<RepoEvents> {
     const documentId = interpretAsDocumentId(id)
     const { allowableStates, signal } = options
 
-    return abortable(
+    return withAbort(
       (async () => {
         const handle = await this.#loadDocument<T>(documentId)
         if (!allowableStates) {

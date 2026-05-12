@@ -1,12 +1,12 @@
 import { describe, it, expect, vi } from "vitest"
 import {
-  abortable,
+  withAbort,
   AbortError,
   isAbortErrorLike,
-} from "../src/helpers/abortable.js"
+} from "../src/helpers/withAbort.js"
 import { pause } from "../src/helpers/pause.js"
 
-describe("abortable", () => {
+describe("withAbort", () => {
   describe("fast-path: signal already aborted before the call", () => {
     it("rejects immediately with signal.reason when signal was aborted with a custom reason", async () => {
       const controller = new AbortController()
@@ -16,7 +16,7 @@ describe("abortable", () => {
       // Underlying promise never settles; if the fast-path weren't there,
       // the wrapper would depend on the abort-listener firing.
       const forever = new Promise<number>(() => {})
-      await expect(abortable(forever, controller.signal)).rejects.toBe(
+      await expect(withAbort(forever, controller.signal)).rejects.toBe(
         customReason
       )
     })
@@ -26,7 +26,7 @@ describe("abortable", () => {
       controller.abort() // platform-default reason (an AbortError-like DOMException)
 
       const forever = new Promise<number>(() => {})
-      const rejection = await abortable(forever, controller.signal).catch(
+      const rejection = await withAbort(forever, controller.signal).catch(
         e => e
       )
       expect(isAbortErrorLike(rejection)).toBe(true)
@@ -37,7 +37,7 @@ describe("abortable", () => {
       controller.abort()
       const addSpy = vi.spyOn(controller.signal, "addEventListener")
 
-      await abortable(Promise.resolve(42), controller.signal).catch(() => {})
+      await withAbort(Promise.resolve(42), controller.signal).catch(() => {})
 
       expect(addSpy).not.toHaveBeenCalled()
     })
@@ -49,7 +49,7 @@ describe("abortable", () => {
       const addSpy = vi.spyOn(controller.signal, "addEventListener")
       const removeSpy = vi.spyOn(controller.signal, "removeEventListener")
 
-      const result = await abortable(Promise.resolve(7), controller.signal)
+      const result = await withAbort(Promise.resolve(7), controller.signal)
       // The outer promise's resolve fires a few microtasks before the
       // .finally() cleanup runs; yield to let the whole chain drain.
       await pause(0)
@@ -69,7 +69,7 @@ describe("abortable", () => {
       const removeSpy = vi.spyOn(controller.signal, "removeEventListener")
 
       await expect(
-        abortable(Promise.reject(new Error("boom")), controller.signal)
+        withAbort(Promise.reject(new Error("boom")), controller.signal)
       ).rejects.toThrow("boom")
       await pause(0) // let the .finally() cleanup chain drain
 
@@ -79,12 +79,12 @@ describe("abortable", () => {
 
     it("aborting the signal after settlement does not throw or produce an unhandled rejection", async () => {
       const controller = new AbortController()
-      const value = await abortable(Promise.resolve("ok"), controller.signal)
+      const value = await withAbort(Promise.resolve("ok"), controller.signal)
       expect(value).toBe("ok")
 
       // Abort after the wrapper has already settled. The listener should
-      // have been removed, and even if it hadn't, the `settled` flag in
-      // abortable prevents a late reject. Either way, this must not throw.
+      // have been removed by .finally(), and Promise.race has already locked
+      // in its result, so a late abort cannot produce a rejection.
       expect(() => controller.abort()).not.toThrow()
     })
   })
@@ -92,14 +92,14 @@ describe("abortable", () => {
   describe("baseline behavior", () => {
     it("returns the resolved value when the wrapped promise resolves before abort", async () => {
       const controller = new AbortController()
-      const result = await abortable(Promise.resolve(42), controller.signal)
+      const result = await withAbort(Promise.resolve(42), controller.signal)
       expect(result).toBe(42)
     })
 
     it("propagates the rejection when the wrapped promise rejects before abort", async () => {
       const controller = new AbortController()
       await expect(
-        abortable(Promise.reject(new Error("inner")), controller.signal)
+        withAbort(Promise.reject(new Error("inner")), controller.signal)
       ).rejects.toThrow("inner")
     })
 
@@ -109,18 +109,30 @@ describe("abortable", () => {
 
       queueMicrotask(() => controller.abort())
 
-      const rejection = await abortable(pending, controller.signal).catch(
+      const rejection = await withAbort(pending, controller.signal).catch(
         e => e
       )
       expect(isAbortErrorLike(rejection)).toBe(true)
     })
 
+    it("rejects with signal.reason (preserving identity) when signal aborts with a custom reason during the wait", async () => {
+      const controller = new AbortController()
+      const customReason = new AbortError("custom abort during await")
+      const pending = pause(1000)
+
+      queueMicrotask(() => controller.abort(customReason))
+
+      await expect(withAbort(pending, controller.signal)).rejects.toBe(
+        customReason
+      )
+    })
+
     it("passes through the wrapped promise unchanged when signal is undefined", async () => {
-      const result = await abortable(Promise.resolve("no-signal"), undefined)
+      const result = await withAbort(Promise.resolve("no-signal"), undefined)
       expect(result).toBe("no-signal")
 
       await expect(
-        abortable(Promise.reject(new Error("x")), undefined)
+        withAbort(Promise.reject(new Error("x")), undefined)
       ).rejects.toThrow("x")
     })
   })
