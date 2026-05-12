@@ -2,7 +2,7 @@ import { next as Automerge } from "@automerge/automerge/slim"
 import { DocHandle } from "./DocHandle.js"
 import { decodeHeads } from "./AutomergeUrl.js"
 import type { DocumentId, UrlHeads } from "./types.js"
-import { AbortError } from "./helpers/abortable.js"
+import { AbortError } from "./helpers/withAbort.js"
 import { type FindProgress, queryStateToFindProgress } from "./_compat.js"
 
 /**

@@ -38,7 +38,7 @@ import { getRandomItem } from "./helpers/getRandomItem.js"
 import { TestDoc } from "./types.js"
 import { StorageId, StorageKey } from "../src/storage/types.js"
 import { DocumentProgress } from "../src/DocumentQuery.js"
-import { AbortError } from "../src/helpers/abortable.js"
+import { AbortError, isAbortErrorLike } from "../src/helpers/withAbort.js"
 
 describe("Repo", () => {
   describe("constructor", () => {
@@ -2472,14 +2472,13 @@ describe("Repo.find() abort behavior", () => {
     const findPromise = repo.find(url, { signal: controller.signal })
     controller.abort()
 
-    // Official specification just says to check `reason.name === "AbortError"`
-    // Using AbortError promotes correctness across different JS environments and provides a simpler check.
-    await expect(findPromise).rejects.toThrow(AbortError)
-    await expect(findPromise).rejects.rejects.toHaveProperty(
-      "name",
-      "AbortError"
-    )
-    await expect(findPromise).rejects.not.toThrow("unavailable")
+    // withAbort propagates signal.reason; the platform-default reason from
+    // controller.abort() (no args) is a DOMException with name "AbortError",
+    // which isn't an instanceof our AbortError class but is AbortError-like.
+    // The spec only requires `name === "AbortError"` — check that.
+    const rejection = await findPromise.catch(e => e)
+    expect(isAbortErrorLike(rejection)).toBe(true)
+    expect(String(rejection)).not.toContain("unavailable")
   })
 
   describe("creating a document with a custom ID factory", () => {
