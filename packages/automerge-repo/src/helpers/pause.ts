@@ -1,5 +1,5 @@
 /* c8 ignore start */
-import { AbortError } from "./abortable.js"
+import { AbortError } from "./withAbort.js"
 
 type AbortListener = (
   this: AbortSignal,

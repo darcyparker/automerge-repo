@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { pause } from "../src/helpers/pause.js"
-import { AbortError } from "../src/helpers/abortable.js"
+import { AbortError } from "../src/helpers/withAbort.js"
 
 describe("pause", () => {
   beforeEach(() => {

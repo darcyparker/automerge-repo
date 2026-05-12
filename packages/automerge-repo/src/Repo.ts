@@ -36,7 +36,7 @@ import type {
   DocumentId,
   PeerId,
 } from "./types.js"
-import { AbortOptions, AbortError } from "./helpers/abortable.js"
+import { AbortOptions, AbortError } from "./helpers/withAbort.js"
 export type { FindProgressWithMethods, ProgressSignal } from "./_compat.js"
 import { Document } from "./Document.js"
 import { truePromiseFactory } from "./helpers/truePromiseFactory.js"

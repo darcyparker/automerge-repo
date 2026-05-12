@@ -105,7 +105,7 @@ export type {
   QueryState,
   SourceState,
 } from "./DocumentQuery.js"
-export type { AbortOptions } from "./helpers/abortable.js"
+export type { AbortOptions } from "./helpers/withAbort.js"
 
 export type {
   FindProgress,
