@@ -1,6 +1,4 @@
 /* c8 ignore start */
-import { AbortError } from "./withAbort.js"
-
 type AbortListener = (
   this: AbortSignal,
   ev: AbortSignalEventMap["abort"]
@@ -49,13 +47,13 @@ export const pause = (
   return new Promise<void>((resolve, reject) => {
     const { signal } = options ?? {}
     if (signal?.aborted) {
-      reject(new AbortError())
+      reject(signal.reason)
       return
     }
     const abortListener: AbortListener | undefined =
       signal &&
       ((): void => {
-        reject(new AbortError())
+        reject(signal.reason)
         clearTimeout(id)
       })
 
