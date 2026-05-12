@@ -32,12 +32,38 @@ export interface NetworkAdapterInterface extends EventEmitter<NetworkAdapterEven
   peerMetadata?: PeerMetadata
 
   isReady(): boolean
+
+  /**
+   * Resolves when the adapter has finished its initial connect/handshake.
+   *
+   * @remarks
+   * Safe to fire-and-forget — the underlying readiness work continues regardless
+   * of whether anyone is awaiting. To bail out locally without affecting other
+   * waiters:
+   *
+   *   await withAbort(adapter.whenReady(), signal)
+   *
+   * @privateRemarks
+   * Intentionally not abortable: this promise is shared across all callers, so
+   * an abort signal here would poison co-waiters. See
+   * [`dev-docs/abort-patterns.md`](../../dev-docs/abort-patterns.md).
+   */
   whenReady(): Promise<void>
 
   /** Called by the {@link Repo} to start the connection process
    *
    * @param peerId - the peerId of this repo
    * @param peerMetadata - how this adapter should present itself to other peers
+   *
+   * @remarks
+   * Returns immediately; await {@link whenReady} to wait until the adapter is usable.
+   *
+   * @privateRemarks
+   * Fire-and-forget initiator. Kept synchronous so the connect/await protocol
+   * stays clear: `connect()` kicks off, `whenReady()` waits. Adapters with
+   * async setup should do that work inside their own `whenReady` resolution,
+   * not by returning a Promise here. See
+   * [`dev-docs/abort-patterns.md`](../../dev-docs/abort-patterns.md).
    */
   connect(peerId: PeerId, peerMetadata?: PeerMetadata): void
   // TODO: should this just return a ready promise?

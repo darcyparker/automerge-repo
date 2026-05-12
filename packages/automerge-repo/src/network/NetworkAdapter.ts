@@ -24,12 +24,32 @@ export abstract class NetworkAdapter
   peerMetadata?: PeerMetadata
 
   abstract isReady(): boolean
+
+  /**
+   * Resolves when the adapter has finished its initial connect/handshake.
+   *
+   * @remarks
+   * Safe to fire-and-forget. To bail out locally without affecting other waiters:
+   *
+   *   await withAbort(adapter.whenReady(), signal)
+   *
+   * @privateRemarks
+   * Intentionally not abortable: shared promise. See
+   * [`dev-docs/abort-patterns.md`](../../dev-docs/abort-patterns.md).
+   */
   abstract whenReady(): Promise<void>
 
   /** Called by the {@link Repo} to start the connection process
    *
    * @param peerId - the peerId of this repo
    * @param peerMetadata - how this adapter should present itself to other peers
+   *
+   * @remarks
+   * Returns immediately; await {@link whenReady} to wait until the adapter is usable.
+   *
+   * @privateRemarks
+   * Fire-and-forget initiator. See
+   * [`dev-docs/abort-patterns.md`](../../dev-docs/abort-patterns.md).
    */
   abstract connect(peerId: PeerId, peerMetadata?: PeerMetadata): void
 
