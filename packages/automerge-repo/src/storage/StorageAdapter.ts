@@ -1,5 +1,8 @@
-import { StorageAdapterInterface } from "./StorageAdapterInterface.js"
-import { StorageKey, Chunk } from "./types.js"
+import type {
+  StorageAdapterInterface,
+  StorageAdapterLoadOptions,
+} from "./StorageAdapterInterface.js"
+import type { StorageKey, Chunk } from "./types.js"
 
 /** A storage adapter represents some way of storing binary data for a {@link Repo}
  * @deprecated use {@link StorageAdapterInterface}
@@ -10,7 +13,10 @@ import { StorageKey, Chunk } from "./types.js"
  */
 export abstract class StorageAdapter implements StorageAdapterInterface {
   /** Load the single value corresponding to `key` */
-  abstract load(key: StorageKey): Promise<Uint8Array | undefined>
+  abstract load(
+    key: StorageKey,
+    options?: StorageAdapterLoadOptions
+  ): Promise<Uint8Array | undefined>
 
   /** Save the value `data` to the key `key` */
   abstract save(key: StorageKey, data: Uint8Array): Promise<void>
@@ -29,7 +35,10 @@ export abstract class StorageAdapter implements StorageAdapterInterface {
    * Be careful! `[documentId]` would also match something like `[documentId, "syncState"]`! We
    * aren't using this yet but keep it in mind.)
    */
-  abstract loadRange(keyPrefix: StorageKey): Promise<Chunk[]>
+  abstract loadRange(
+    keyPrefix: StorageKey,
+    options?: StorageAdapterLoadOptions
+  ): Promise<Chunk[]>
 
   /** Remove all values with keys that start with `keyPrefix` */
   abstract removeRange(keyPrefix: StorageKey): Promise<void>
