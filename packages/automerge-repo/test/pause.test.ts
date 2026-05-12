@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { pause } from "../src/helpers/pause.js"
-import { AbortError } from "../src/helpers/withAbort.js"
+import { isAbortErrorLike } from "../src/helpers/withAbort.js"
 
 describe("pause", () => {
   beforeEach(() => {
@@ -43,14 +43,17 @@ describe("pause", () => {
       const controller = new AbortController()
       controller.abort()
 
-      await expect(
-        pause(1000, { signal: controller.signal })
-      ).rejects.toBeInstanceOf(AbortError)
+      const rejection = await pause(1000, {
+        signal: controller.signal,
+      }).catch(e => e)
+      // pause rejects with signal.reason; default reason from controller.abort()
+      // is a platform DOMException with name "AbortError" (AbortError-like).
+      expect(isAbortErrorLike(rejection)).toBe(true)
       // The abort fast-path returned before setTimeout was reached.
       expect(vi.getTimerCount()).toBe(before)
     })
 
-    it("rejects with AbortError and clears the timer when the signal aborts mid-pause", async () => {
+    it("rejects with AbortError-like reason and clears the timer when the signal aborts mid-pause", async () => {
       const before = vi.getTimerCount()
       const controller = new AbortController()
       const p = pause(1000, { signal: controller.signal })
@@ -59,7 +62,8 @@ describe("pause", () => {
       await vi.advanceTimersByTimeAsync(20)
       controller.abort()
 
-      await expect(p).rejects.toBeInstanceOf(AbortError)
+      const rejection = await p.catch(e => e)
+      expect(isAbortErrorLike(rejection)).toBe(true)
       // The pending 1000ms timer was cleared by the abort listener.
       expect(vi.getTimerCount()).toBe(before)
     })
@@ -87,7 +91,8 @@ describe("pause", () => {
       await vi.advanceTimersByTimeAsync(20)
       c2.abort() // abort via the second source
 
-      await expect(p).rejects.toBeInstanceOf(AbortError)
+      const rejection = await p.catch(e => e)
+      expect(isAbortErrorLike(rejection)).toBe(true)
     })
   })
 })
