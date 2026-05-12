@@ -1,4 +1,17 @@
 /**
+ * Helpers for racing a Promise against an `AbortSignal`.
+ *
+ * For codebase-wide guidance on when to accept `AbortSignal`, the sharing rule
+ * for memoized promises, and when to use {@link withAbort} vs. raw
+ * `Promise.race`, see
+ * [`dev-docs/abort-patterns.md`](../../dev-docs/abort-patterns.md).
+ *
+ * Compare {@link withTimeout} for the same shape with a time-based side channel.
+ *
+ * @packageDocumentation
+ */
+
+/**
  * An error thrown when an operation is aborted.
  *
  * @remarks
@@ -101,6 +114,11 @@ export function withAbort<T>(
 
 /**
  * Include this type in an options object to pass an AbortSignal to a function.
+ *
+ * @remarks
+ * Only add to methods that do real work (I/O, long sends). For shared/memoized
+ * promises, race externally with {@link withAbort} or `Promise.race` —
+ * see [`dev-docs/abort-patterns.md`](../../dev-docs/abort-patterns.md).
  */
 export interface AbortOptions {
   signal?: AbortSignal
