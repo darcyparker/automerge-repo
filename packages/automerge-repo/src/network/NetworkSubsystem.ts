@@ -109,10 +109,13 @@ export class NetworkSubsystem extends EventEmitter<NetworkSubsystemEvents> {
       this.adapters = this.adapters.filter(a => a !== networkAdapter)
     })
 
+    // Return connect()'s result from the .then() callback rather than calling
+    // it as a bare statement. connect() is declared `void`, so for a compliant
+    // adapter this is a no-op — but if a custom adapter's connect() widens to
+    // Promise<void> (e.g. an async method), returning it chains any rejection
+    // into the .catch() below instead of silently dropping it.
     this.peerMetadata
-      .then(peerMetadata => {
-        networkAdapter.connect(this.peerId, peerMetadata)
-      })
+      .then(peerMetadata => networkAdapter.connect(this.peerId, peerMetadata))
       .catch(err => {
         this.#log.error("error connecting to network", err)
       })
