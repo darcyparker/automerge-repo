@@ -645,7 +645,8 @@ export class Repo extends EventEmitter<RepoEvents> {
       documentId,
       handle,
       progressSignal,
-      signal ? withAbort(foreverPromise, signal) : foreverPromise
+      signal ? withAbort(foreverPromise, signal) : foreverPromise,
+      signal
     )
 
     const result = {
@@ -664,7 +665,8 @@ export class Repo extends EventEmitter<RepoEvents> {
     progressSignal: {
       notify: (progress: FindProgress<T>) => void
     },
-    abortPromise: Promise<never>
+    abortPromise: Promise<never>,
+    signal?: AbortSignal
   ) {
     try {
       progressSignal.notify({
@@ -673,9 +675,12 @@ export class Repo extends EventEmitter<RepoEvents> {
         handle,
       })
 
-      const loadingPromise = await (this.storageSubsystem
-        ? this.storageSubsystem.loadDoc(handle.documentId)
-        : Promise.resolve(null))
+      // Pass `signal` so storage adapters that cooperate with abort can
+      // short-circuit; race against `abortPromise` so callers bail
+      // immediately on abort even if the adapter ignores the signal.
+      const loadingPromise = this.storageSubsystem
+        ? this.storageSubsystem.loadDoc<T>(handle.documentId, { signal })
+        : Promise.resolve(null)
 
       const loadedDoc = await Promise.race([loadingPromise, abortPromise])
 
@@ -777,7 +782,10 @@ export class Repo extends EventEmitter<RepoEvents> {
   /**
    * Loads a document without waiting for ready state
    */
-  async #loadDocument<T>(documentId: DocumentId): Promise<DocHandle<T>> {
+  async #loadDocument<T>(
+    documentId: DocumentId,
+    options?: AbortOptions
+  ): Promise<DocHandle<T>> {
     // If we have the handle cached, return it
     if (this.#handleCache[documentId]) {
       return this.#handleCache[documentId]
@@ -786,7 +794,7 @@ export class Repo extends EventEmitter<RepoEvents> {
     // If we don't already have the handle, make an empty one and try loading it
     const handle = this.#getHandle<T>({ documentId })
     const loadedDoc = await (this.storageSubsystem
-      ? this.storageSubsystem.loadDoc(handle.documentId)
+      ? this.storageSubsystem.loadDoc<T>(handle.documentId, options)
       : Promise.resolve(null))
 
     if (loadedDoc) {
@@ -797,8 +805,10 @@ export class Repo extends EventEmitter<RepoEvents> {
     } else {
       // Because the network subsystem might still be booting up, we wait
       // here so that we don't immediately give up loading because we're still
-      // making our initial connection to a sync server.
-      await this.networkSubsystem.whenReady()
+      // making our initial connection to a sync server. `withAbort` makes the
+      // wait interruptible — if `signal` aborts during the wait, we throw
+      // before mutating handle state (B5: avoid `handle.request()` after abort).
+      await withAbort(this.networkSubsystem.whenReady(), options?.signal)
       handle.request()
     }
 
@@ -820,7 +830,7 @@ export class Repo extends EventEmitter<RepoEvents> {
 
     return withAbort(
       (async () => {
-        const handle = await this.#loadDocument<T>(documentId)
+        const handle = await this.#loadDocument<T>(documentId, { signal })
         if (!allowableStates) {
           await handle.whenReady([READY, UNAVAILABLE])
           if (handle.state === UNAVAILABLE && !signal?.aborted) {
