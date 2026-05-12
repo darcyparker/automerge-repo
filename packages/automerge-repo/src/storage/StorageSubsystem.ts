@@ -10,6 +10,10 @@ import * as Uuid from "uuid"
 import { EventEmitter } from "eventemitter3"
 import { encodeHeads } from "../AutomergeUrl.js"
 import { SavedHeads } from "./SavedHeads.js"
+import { AbortOptions, isAbortErrorLike } from "../helpers/withAbort.js"
+import { isTimeoutErrorLike } from "../helpers/withTimeout.js"
+
+type LoadOptions = AbortOptions
 
 type StorageSubsystemEvents = {
   "document-loaded": (arg: {
@@ -82,16 +86,25 @@ export class StorageSubsystem extends EventEmitter<StorageSubsystemEvents> {
   // Typically this will be the name of the plug-in, adapter, or other system that is using it. For
   // example, the LocalFirstAuthProvider uses the namespace `LocalFirstAuthProvider`.
 
-  /** Loads a value from storage. */
-  async load(
+  /**
+   * Loads a value from storage.
+   *
+   * @remarks
+   * Pass `options.signal` to bail out of a long load.
+   *
+   * @privateRemarks
+   * Real I/O — see [`dev-docs/abort-patterns.md`](../../dev-docs/abort-patterns.md).
+   */
+  load(
     /** Namespace to prevent collisions with other users of the storage subsystem. */
     namespace: string,
 
     /** Key to load. Typically a UUID or other unique identifier, but could be any string. */
-    key: string
+    key: string,
+    options?: LoadOptions
   ): Promise<Uint8Array | undefined> {
     const storageKey = [namespace, key] as StorageKey
-    return await this.#storageAdapter.load(storageKey)
+    return this.#storageAdapter.load(storageKey, options)
   }
 
   /** Saves a value in storage. */
@@ -125,17 +138,23 @@ export class StorageSubsystem extends EventEmitter<StorageSubsystemEvents> {
 
   /**
    * Loads and combines document chunks from storage, with snapshots first.
+   *
+   * @remarks
+   * Pass `options.signal` to bail out of a long load.
    */
-  async loadDocData(documentId: DocumentId): Promise<Uint8Array | null> {
+  async loadDocData(
+    documentId: DocumentId,
+    options?: LoadOptions
+  ): Promise<Uint8Array | null> {
     // Load snapshots first
-    const snapshotChunks = await this.#storageAdapter.loadRange([
-      documentId,
-      "snapshot",
-    ])
-    const incrementalChunks = await this.#storageAdapter.loadRange([
-      documentId,
-      "incremental",
-    ])
+    const snapshotChunks = await this.#storageAdapter.loadRange(
+      [documentId, "snapshot"],
+      options
+    )
+    const incrementalChunks = await this.#storageAdapter.loadRange(
+      [documentId, "incremental"],
+      options
+    )
 
     const binaries: Uint8Array[] = []
     const chunkInfos: ChunkInfo[] = []
@@ -176,11 +195,16 @@ export class StorageSubsystem extends EventEmitter<StorageSubsystemEvents> {
 
   /**
    * Loads the Automerge document with the given ID from storage.
+   *
+   * @remarks
+   * Pass `options.signal` to bail out of a long load.
    */
-  async loadDoc<T>(documentId: DocumentId): Promise<A.Doc<T> | null> {
-    const headsHandle = this.#storedHeads.lastSavedHeads(documentId)
+  async loadDoc<T>(
+    documentId: DocumentId,
+    options?: LoadOptions
+  ): Promise<A.Doc<T> | null> {
     // Load and combine chunks
-    const binary = await this.loadDocData(documentId)
+    const binary = await this.loadDocData(documentId, options)
     if (!binary) return null
 
     // Load into an Automerge document
@@ -194,7 +218,7 @@ export class StorageSubsystem extends EventEmitter<StorageSubsystemEvents> {
     })
 
     // Record the latest heads for the document
-    headsHandle.update(A.getHeads(newDoc))
+    this.#storedHeads.lastSavedHeads(documentId).update(A.getHeads(newDoc))
 
     return newDoc
   }
@@ -319,16 +343,32 @@ export class StorageSubsystem extends EventEmitter<StorageSubsystemEvents> {
     this.#compacting = false
   }
 
+  /**
+   * @remarks
+   * Pass `options.signal` to bail out of a long load.
+   */
   async loadSyncState(
     documentId: DocumentId,
-    storageId: StorageId
+    storageId: StorageId,
+    options?: LoadOptions
   ): Promise<A.SyncState | undefined> {
     const key = [documentId, "sync-state", storageId]
     try {
-      const loaded = await this.#storageAdapter.load(key)
+      const loaded = await this.#storageAdapter.load(key, options)
       return loaded ? A.decodeSyncState(loaded) : undefined
     } catch (e) {
-      this.#log(`Error loading sync state for ${documentId} from ${storageId}`)
+      // Distinguish cancellation causes so the log is actionable. A storage
+      // adapter implementer might compose the caller's signal with
+      // AbortSignal.timeout(), surfacing TimeoutError-shape rejections; we
+      // don't want to mislabel those as "aborted".
+      const suffix = isAbortErrorLike(e)
+        ? ": aborted"
+        : isTimeoutErrorLike(e)
+        ? ": timed out"
+        : ""
+      this.#log(
+        `Error loading sync state for ${documentId} from ${storageId}${suffix}`
+      )
       return undefined
     }
   }
