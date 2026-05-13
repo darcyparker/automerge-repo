@@ -143,6 +143,18 @@ export class CollectionSynchronizer
 
   // MESSAGE HANDLING
 
+  /**
+   * Dispatch an inbound wire message to the appropriate DocSynchronizer,
+   * resurrecting the query via `ensureQuery` if none exists.
+   *
+   * @privateRemarks
+   * Intentionally not abortable and synchronous: a network message is an
+   * event that has already arrived; dropping it mid-processing creates a
+   * sync hole. Callers also have no `AbortSignal` in scope at this layer.
+   * Synchronous execution closes the race window between
+   * `removeFromCache` and message routing — see
+   * [`dev-docs/abort-patterns.md`](../../dev-docs/abort-patterns.md).
+   */
   receiveMessage(message: DocMessage): void {
     log(
       `onSyncMessage: ${message.senderId}, ${message.documentId}, ${
