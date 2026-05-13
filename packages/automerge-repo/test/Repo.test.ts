@@ -2456,9 +2456,13 @@ describe("Repo.find() abort behavior", () => {
     const controller = new AbortController()
     controller.abort()
 
-    await expect(
-      repo.find(generateAutomergeUrl(), { signal: controller.signal })
-    ).rejects.toThrow(AbortError)
+    // throwIfAborted() throws signal.reason — for a no-arg abort() that's
+    // a platform DOMException with name "AbortError", which is
+    // AbortError-like but not an instance of our AbortError class.
+    const rejection = await repo
+      .find(generateAutomergeUrl(), { signal: controller.signal })
+      .catch(e => e)
+    expect(isAbortErrorLike(rejection)).toBe(true)
   })
 
   it("can abort while waiting for ready state", async () => {
