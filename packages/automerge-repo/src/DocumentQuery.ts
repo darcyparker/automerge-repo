@@ -54,6 +54,13 @@ export interface DocumentProgress<T> {
   /**
    * Returns a promise that resolves with the DocHandle when the query reaches
    * the `ready` state. Rejects if the query fails or the signal is aborted.
+   *
+   * @remarks
+   * `options.signal` cancels only the await — it does not stop the
+   * underlying sources (storage load, sync request to peers), which may
+   * be working on behalf of other concurrent callers. Aborts reject with
+   * `signal.reason` (preserving custom reasons). See
+   * [`dev-docs/abort-patterns.md`](../dev-docs/abort-patterns.md).
    */
   whenReady(options?: { signal?: AbortSignal }): Promise<DocHandle<T>>
 
