@@ -216,7 +216,14 @@ describe("DocHandle.remoteHeads", () => {
       const bobDocB = bob.create<TestDoc>()
       bobDocB.change(d => (d.foo = "B"))
 
-      await pause(50)
+      // Wait for bob's docs to propagate to bob's service worker. A
+      // fixed pause(50) is on the edge of what's reliable across the
+      // sync chain — CI has shown this flake. Pulling the doc via
+      // .find() further up the chain triggers premature "unavailable"
+      // responses (syncServer.sharePolicy is false; intermediates only
+      // forward, they don't proactively fetch), so a longer pause is
+      // the simplest robust barrier here.
+      await pause(200)
 
       // alice opens the docs
       const _aliceDocA = alice.find<TestDoc>(bobDocA.url)
