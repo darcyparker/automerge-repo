@@ -31,11 +31,26 @@ export interface DocumentSource {
    * */
   readonly priority: SourcePriority
 
-  /** Called when a new document is registered. The source should call
-   *  `query.sourcePending(name)` / `query.sourceUnavailable(name)` as
-   *  appropriate to participate in the query's availability tracking. */
+  /**
+   * Called when a new document is registered. The source should call
+   * `query.sourcePending(name)` / `query.sourceUnavailable(name)` as
+   * appropriate to participate in the query's availability tracking.
+   *
+   * @privateRemarks
+   * Intentionally not abortable. `attach` is a synchronous lifecycle
+   * hook; any async work the source kicks off is tracked through the
+   * query's source-state machinery, and callers race on
+   * {@link DocumentQuery.whenReady} with their own signal.
+   * See [`dev-docs/abort-patterns.md`](../dev-docs/abort-patterns.md).
+   */
   attach(query: DocumentQuery<unknown>): void
 
-  /** Called when a document is removed from the repo. */
+  /**
+   * Called when a document is removed from the repo.
+   *
+   * @privateRemarks
+   * Intentionally not abortable: detach is a synchronous teardown
+   * hook. See [`dev-docs/abort-patterns.md`](../dev-docs/abort-patterns.md).
+   */
   detach(documentId: DocumentId): void
 }

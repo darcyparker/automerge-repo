@@ -249,6 +249,15 @@ export class DocSynchronizer extends EventEmitter<DocSynchronizerEvents> {
     return this.#peers.has(peerId)
   }
 
+  /**
+   * Dispatch a wire message addressed to this DocSynchronizer.
+   *
+   * @privateRemarks
+   * Intentionally not abortable and synchronous: a network message is an
+   * event that has already arrived; dropping it mid-processing creates a
+   * sync hole. Callers also have no `AbortSignal` in scope at this layer.
+   * See [`dev-docs/abort-patterns.md`](../../dev-docs/abort-patterns.md).
+   */
   receiveMessage(message: RepoMessage): void {
     switch (message.type) {
       case "sync":
