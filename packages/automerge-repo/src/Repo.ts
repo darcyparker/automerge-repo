@@ -510,6 +510,19 @@ export class Repo extends EventEmitter<RepoEvents> {
 
   /**
    * Look up a document by URL and wait for it to be ready.
+   *
+   * @remarks
+   * Pass `options.signal` to bail out of the wait. The signal cancels the
+   * await on the underlying {@link DocumentQuery} only — it does NOT cancel
+   * the load itself. The query and its sources keep running because they
+   * may be serving other concurrent callers; aborting one caller's wait
+   * must not poison those. To stop the load entirely, use
+   * {@link Repo.removeFromCache}.
+   *
+   * Aborts reject with `signal.reason`, preserving custom reasons passed
+   * to `controller.abort(reason)` instead of replacing them with a bare
+   * {@link AbortError}. See
+   * [`dev-docs/abort-patterns.md`](../dev-docs/abort-patterns.md).
    */
   async find<T>(
     id: AnyDocumentId,
