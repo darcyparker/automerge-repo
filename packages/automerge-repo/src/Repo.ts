@@ -517,9 +517,12 @@ export class Repo extends EventEmitter<RepoEvents> {
   ): Promise<DocHandle<T>> {
     const { signal } = options
 
-    if (signal?.aborted) {
-      throw new AbortError()
-    }
+    // Use throwIfAborted to preserve signal.reason. signal.reason is the
+    // platform-standard "why" carried by AbortSignal — callers can pass
+    // their own reason via `controller.abort(reason)` and an aborted
+    // find() should propagate it intact instead of swallowing it as a
+    // bare AbortError. See dev-docs/abort-patterns.md.
+    signal?.throwIfAborted()
 
     const { heads } = isValidAutomergeUrl(id)
       ? parseAutomergeUrl(id)
