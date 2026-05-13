@@ -36,7 +36,7 @@ import type {
   DocumentId,
   PeerId,
 } from "./types.js"
-import { AbortOptions, AbortError } from "./helpers/withAbort.js"
+import { AbortOptions } from "./helpers/withAbort.js"
 export type { FindProgressWithMethods, ProgressSignal } from "./_compat.js"
 import { Document } from "./Document.js"
 import { truePromiseFactory } from "./helpers/truePromiseFactory.js"
@@ -547,9 +547,12 @@ export class Repo extends EventEmitter<RepoEvents> {
   ): Promise<DocHandle<T>> {
     const { signal } = options
 
-    if (signal?.aborted) {
-      throw new AbortError()
-    }
+    // Use throwIfAborted to preserve signal.reason. signal.reason is the
+    // platform-standard "why" carried by AbortSignal — callers can pass
+    // their own reason via `controller.abort(reason)` and an aborted
+    // find() should propagate it intact instead of swallowing it as a
+    // bare AbortError. See dev-docs/abort-patterns.md.
+    signal?.throwIfAborted()
 
     // `findWithProgress` already applies any path suffix (`/a/@0/b`) and
     // fixed heads (`#h1|h2`) from the URL, so the ready handle is correctly
