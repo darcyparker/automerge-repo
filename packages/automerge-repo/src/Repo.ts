@@ -39,6 +39,7 @@ import { AbortOptions, AbortError } from "./helpers/abortable.js"
 export { FindProgressWithMethods, ProgressSignal } from "./_compat.js"
 import { RefImpl } from "./refs/ref.js"
 import { truePromiseFactory } from "./helpers/truePromiseFactory.js"
+import { testInternals } from "./testInternals.js"
 import { WeakValueMap } from "./helpers/WeakValueMap.js"
 
 export type { DocumentProgress } from "./DocumentQuery.js"
@@ -76,6 +77,16 @@ export class Repo extends EventEmitter<RepoEvents> {
   //   handle weakly and self-evicts dead entries via FinalizationRegistry.
   #queriesByHandle = new WeakMap<DocHandle<any>, DocumentQuery<any>>()
   #queryHandleByDocumentId = new WeakValueMap<DocumentId, DocHandle<any>>()
+
+  // When the consumer's last strong reference to a handle goes away
+  // and the handle is collected, the registry callback runs cleanup
+  // for coordination state that doesn't self-clean. Both targets are
+  // idempotent: `removeFromCache(id)` can run before GC and call
+  // these explicitly, and the registry firing afterwards is a no-op.
+  #handleCleanupRegistry = new FinalizationRegistry<DocumentId>(documentId => {
+    this.synchronizer.detach(documentId)
+    this.#syncStateTracker.delete(documentId)
+  })
 
   /** @hidden */
   synchronizer: CollectionSynchronizer
@@ -309,10 +320,18 @@ export class Repo extends EventEmitter<RepoEvents> {
     return this.#queriesByHandle.get(handle) as DocumentQuery<T> | undefined
   }
 
-  /** Register a freshly-created query in both stores. */
+  /** Register a freshly-created query in both stores and arrange for
+   *  coordination-state cleanup when the consumer drops the handle. */
   #registerQuery(query: DocumentQuery<unknown>): void {
     this.#queriesByHandle.set(query.handle, query)
     this.#queryHandleByDocumentId.set(query.documentId, query.handle)
+    // Unregister token is the handle itself, used by #unregisterQuery
+    // on the explicit-removal path.
+    this.#handleCleanupRegistry.register(
+      query.handle,
+      query.documentId,
+      query.handle
+    )
   }
 
   /** Explicit-removal path. Both stores auto-clean when the handle is
@@ -320,7 +339,14 @@ export class Repo extends EventEmitter<RepoEvents> {
    *  eagerly. */
   #unregisterQuery(documentId: DocumentId): void {
     const handle = this.#queryHandleByDocumentId.get(documentId)
-    if (handle) this.#queriesByHandle.delete(handle)
+    if (handle) {
+      this.#queriesByHandle.delete(handle)
+      // Stop the FinalizationRegistry callback from firing later for
+      // this doc. If the handle is already collected (we got
+      // undefined), the callback may already be queued — its work
+      // is idempotent so a late run is harmless.
+      this.#handleCleanupRegistry.unregister(handle)
+    }
     this.#queryHandleByDocumentId.delete(documentId)
   }
 
@@ -676,11 +702,13 @@ export class Repo extends EventEmitter<RepoEvents> {
     } else {
       return this.storageSubsystem.id()
     }
-  }
+  };
 
   /** Generator yielding save promises for currently-ready docs only.
    *  Single-pass over the documentId index; no intermediate arrays. */
-  *#saveTasks(documents?: Iterable<DocumentId>): IterableIterator<Promise<void>> {
+  *#saveTasks(
+    documents?: Iterable<DocumentId>
+  ): IterableIterator<Promise<void>> {
     const ids = documents ?? this.#queryHandleByDocumentId.keys()
     for (const id of ids) {
       const state = this.#getQuery(id)?.peek()
@@ -731,6 +759,19 @@ export class Repo extends EventEmitter<RepoEvents> {
 
   shareConfigChanged() {
     this.synchronizer.reevaluateDocumentShare()
+  }
+
+  /** Test-only escape hatch. The {@link testInternals} symbol is exported
+   *  from a module not part of the public entrypoint, so this method is
+   *  unreachable from external code. Used by tests to assert on internal
+   *  cleanup state (e.g. that `#syncStateTracker` no longer has an entry
+   *  for a doc whose handle was GC'd). */
+  static [testInternals](repo: Repo) {
+    return {
+      syncStateTracker: repo.#syncStateTracker,
+      queryHandleByDocumentId: repo.#queryHandleByDocumentId,
+      queriesByHandle: repo.#queriesByHandle,
+    }
   }
 }
 
