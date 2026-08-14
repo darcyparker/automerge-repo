@@ -66,7 +66,7 @@ export interface AutomergeSyncConfig {
 
   /**
    * Maximum number of share-policy resolutions run concurrently during
-   * {@link CollectionSynchronizer.reevaluateDocumentShare}. Defaults to
+   * {@link CollectionSynchronizer.shareConfigChanged}. Defaults to
    * {@link SHARE_POLICY_CONCURRENCY}.
    */
   sharePolicyConcurrency?: number
@@ -106,7 +106,7 @@ export class CollectionSynchronizer
   // One shared limiter for every share-policy resolution in the collection, so
   // the concurrent user announce/access callbacks are capped across all
   // documents and peers together: both the per-peer resolution on addPeer and
-  // the whole-collection re-evaluation on reevaluateDocumentShare draw from it.
+  // the whole-collection re-evaluation on shareConfigChanged draw from it.
   #sharePolicyLimit: Limit
 
   constructor(config: AutomergeSyncConfig, denylist: AutomergeUrl[] = []) {
