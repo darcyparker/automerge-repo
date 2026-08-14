@@ -36,6 +36,12 @@ catalogs:
     '@vitest/ui':
       specifier: ^4.1.10
       version: 4.1.10
+    cbor-x:
+      specifier: ^1.6.4
+      version: 1.6.4
+    debug:
+      specifier: ^4.4.3
+      version: 4.4.3
     eventemitter3:
       specifier: ^5.0.4
       version: 5.0.4
@@ -458,13 +464,13 @@ importers:
         specifier: ^4.0.0
         version: 4.0.0
       cbor-x:
-        specifier: ^1.6.4
+        specifier: 'catalog:'
         version: 1.6.4
       debug:
-        specifier: ^4.4.3
+        specifier: 'catalog:'
         version: 4.4.3
       eventemitter3:
-        specifier: ^5.0.4
+        specifier: 'catalog:'
         version: 5.0.4
       fast-sha256:
         specifier: ^1.3.0
@@ -476,7 +482,7 @@ importers:
         specifier: 'catalog:'
         version: 14.0.1
       ws:
-        specifier: ^8.21.0
+        specifier: 'catalog:'
         version: 8.21.0
       xstate:
         specifier: ^5.32.4
@@ -548,16 +554,16 @@ importers:
         specifier: workspace:*
         version: link:../automerge-repo
       cbor-x:
-        specifier: ^1.6.4
+        specifier: 'catalog:'
         version: 1.6.4
       debug:
-        specifier: ^4.4.3
+        specifier: 'catalog:'
         version: 4.4.3
       eventemitter3:
-        specifier: ^5.0.4
+        specifier: 'catalog:'
         version: 5.0.4
       ws:
-        specifier: ^8.21.0
+        specifier: 'catalog:'
         version: 8.21.0
     devDependencies:
       '@automerge/automerge':
@@ -567,7 +573,7 @@ importers:
         specifier: 'catalog:'
         version: 8.18.1
       portfinder:
-        specifier: ^1.0.38
+        specifier: 'catalog:'
         version: 1.0.38
       typescript:
         specifier: 'catalog:'
