@@ -5,7 +5,7 @@ import { makeLogger } from "./Logger.js"
 import type { PeerMetadata } from "./network/NetworkAdapterInterface.js"
 import type { StorageSubsystem } from "./storage/StorageSubsystem.js"
 import type { StorageId } from "./storage/types.js"
-import type { DocumentId, UrlHeads } from "./types.js"
+import type { UrlHeads } from "./types.js"
 import type { SyncStatePayload } from "./synchronizer/Synchronizer.js"
 import { asyncThrottle } from "./helpers/throttle.js"
 
@@ -23,7 +23,12 @@ export interface SyncStateChange {
  * bookkeeping out of the main orchestrator.
  */
 export class SyncStateTracker {
-  #syncInfo: Record<DocumentId, Record<StorageId, SyncInfo>> = {}
+  /**
+   * Per-document sync info, keyed weakly by the root handle, which lives
+   * exactly as long as its document - so entries die with the document
+   * and the GC path needs no explicit cleanup.
+   */
+  #syncInfo = new WeakMap<DocHandle<any>, Record<StorageId, SyncInfo>>()
   #storage: StorageSubsystem | undefined
   #saveDebounceRate: number
   #throttledSaveSyncStateHandlers: Record<
@@ -56,8 +61,8 @@ export class SyncStateTracker {
     // Persist sync state to storage
     this.#saveSyncState(message, storageId, !!isEph)
 
-    const docSyncInfo = this.#syncInfo[message.documentId] ?? {}
-    const heads = docSyncInfo[storageId]?.lastHeads
+    let docSyncInfo = this.#syncInfo.get(handle)
+    const heads = docSyncInfo?.[storageId]?.lastHeads
     const haveHeadsChanged =
       message.syncState.theirHeads &&
       (!heads ||
@@ -69,10 +74,11 @@ export class SyncStateTracker {
         lastHeads: newHeads,
         lastSyncTimestamp: Date.now(),
       }
-      if (!this.#syncInfo[message.documentId]) {
-        this.#syncInfo[message.documentId] = {}
+      if (!docSyncInfo) {
+        docSyncInfo = {}
+        this.#syncInfo.set(handle, docSyncInfo)
       }
-      this.#syncInfo[message.documentId][storageId] = syncInfo
+      docSyncInfo[storageId] = syncInfo
 
       handle.emit("remote-heads", {
         storageId,
@@ -94,16 +100,17 @@ export class SyncStateTracker {
    * Process a gossiped remote-heads-changed event.
    */
   handleRemoteHeadsChanged(
-    documentId: DocumentId,
     storageId: StorageId,
     remoteHeads: UrlHeads,
     timestamp: number,
     handle: DocHandle<any>
   ): void {
-    if (!this.#syncInfo[documentId]) {
-      this.#syncInfo[documentId] = {}
+    let docSyncInfo = this.#syncInfo.get(handle)
+    if (!docSyncInfo) {
+      docSyncInfo = {}
+      this.#syncInfo.set(handle, docSyncInfo)
     }
-    this.#syncInfo[documentId][storageId] = {
+    docSyncInfo[storageId] = {
       lastHeads: remoteHeads,
       lastSyncTimestamp: timestamp,
     }
@@ -120,17 +127,18 @@ export class SyncStateTracker {
    * info from that peer.
    */
   getSyncInfo(
-    documentId: DocumentId,
+    handle: DocHandle<any>,
     storageId: StorageId
   ): SyncInfo | undefined {
-    return this.#syncInfo[documentId]?.[storageId]
+    return this.#syncInfo.get(handle)?.[storageId]
   }
 
   /**
-   * Clean up state for a document.
+   * Clean up state for a document (explicit teardown; the GC path cleans
+   * up on its own through the WeakMap).
    */
-  delete(documentId: DocumentId): void {
-    delete this.#syncInfo[documentId]
+  delete(handle: DocHandle<any>): void {
+    this.#syncInfo.delete(handle)
   }
 
   /** saves sync state throttled per storage id, if a peer doesn't have a storage id it's sync state is not persisted */
