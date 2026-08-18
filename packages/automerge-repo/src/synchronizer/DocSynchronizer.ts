@@ -22,6 +22,7 @@ import { semaphore, type Limit } from "../helpers/semaphore.js"
 import { HashRing } from "../helpers/HashRing.js"
 import type { DocumentQuery } from "../DocumentQuery.js"
 import type { SyncStatePayload, DocSyncMetrics } from "./Synchronizer.js"
+import { kOnInternal, kSubscribeInternal } from "../internals.js"
 
 /**
  * Default cap on concurrent share-policy resolutions. Resolving a peer's share
@@ -137,7 +138,7 @@ export class DocSynchronizer extends EventEmitter<DocSynchronizerEvents> {
     this.#shareConfig = shareConfig
     query.sourcePending("automerge-sync")
 
-    query.subscribe(() => {
+    query[kSubscribeInternal](() => {
       // Anything internal to the query changed — either the public state
       // transitioned (e.g. data arrived from storage) or the source mix
       // changed (e.g. a higher-priority source gave up). Mark peers dirty
@@ -156,7 +157,7 @@ export class DocSynchronizer extends EventEmitter<DocSynchronizerEvents> {
     const docId = handle.documentId.slice(0, 5)
     this.#log = makeLogger(`automerge-repo:docsync:${docId}`)
 
-    handle.on(
+    handle[kOnInternal](
       "change",
       asyncThrottle(async () => {
         // Mark all active peers dirty — we have new data to send.
@@ -167,7 +168,7 @@ export class DocSynchronizer extends EventEmitter<DocSynchronizerEvents> {
       }, this.syncDebounceRate)
     )
 
-    handle.on("ephemeral-message-outbound", payload =>
+    handle[kOnInternal]("ephemeral-message-outbound", payload =>
       this.#broadcastToPeers(payload)
     )
 
