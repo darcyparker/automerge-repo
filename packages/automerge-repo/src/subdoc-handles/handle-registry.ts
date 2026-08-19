@@ -242,39 +242,49 @@ export class HandleRegistry {
     if (external) this.document[kRetainDocument]()
   }
 
+  /** Remove one external listener. Repo-internal listeners are not
+   * removable through the public API. */
   removeListener<T>(handle: DocHandle<T>, event: string, fn: Listener): void {
     const m = this.#listeners.get(handle)
     if (!m) return
     const s = m.get(event)
-    if (!s || !s.has(fn)) return
-    const external = s.get(fn)!
+    if (!s || !s.get(fn)) return
     s.delete(fn)
-    if (external) this.document[kReleaseDocument]()
+    this.document[kReleaseDocument]()
     if (s.size === 0) m.delete(event)
     if (m.size === 0) this.#listeners.delete(handle)
   }
 
+  /** Remove every external listener on the handle. Repo-internal listeners
+   * (autosave, query recompute, sync) survive consumer cleanup. */
   removeAllListenersForHandle<T>(handle: DocHandle<T>): void {
     const m = this.#listeners.get(handle)
     if (!m) return
-    this.#listeners.delete(handle)
-    for (const s of m.values()) {
-      for (const external of s.values()) {
-        if (external) this.document[kReleaseDocument]()
+    for (const [event, s] of m) {
+      for (const [fn, external] of s) {
+        if (!external) continue
+        s.delete(fn)
+        this.document[kReleaseDocument]()
       }
+      if (s.size === 0) m.delete(event)
     }
+    if (m.size === 0) this.#listeners.delete(handle)
   }
 
+  /** Remove every external listener for one event; repo-internal listeners
+   * survive (see `removeAllListenersForHandle`). */
   removeAllListenersForEvent<T>(handle: DocHandle<T>, event: string): void {
     const m = this.#listeners.get(handle)
     if (!m) return
     const s = m.get(event)
     if (!s) return
-    m.delete(event)
-    if (m.size === 0) this.#listeners.delete(handle)
-    for (const external of s.values()) {
-      if (external) this.document[kReleaseDocument]()
+    for (const [fn, external] of s) {
+      if (!external) continue
+      s.delete(fn)
+      this.document[kReleaseDocument]()
     }
+    if (s.size === 0) m.delete(event)
+    if (m.size === 0) this.#listeners.delete(handle)
   }
 
   hasListeners<T>(handle: DocHandle<T>): boolean {

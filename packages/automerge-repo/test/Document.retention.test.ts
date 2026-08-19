@@ -131,19 +131,41 @@ describe("Document external retention", () => {
 
       const listenerA = () => {}
       const listenerB = () => {}
-      handle[kOnInternal]("change", () => {})
+      const internal = () => {}
+      handle[kOnInternal]("change", internal)
       handle.on("change", listenerA)
       handle.on("change", listenerB)
       handle.on("heads-changed", listenerA)
       expect(handle.listeners("change")).toContain(listenerA)
 
       handle.off("change")
-      expect(handle.listenerCount("change")).toBe(0)
+      expect(handle.listeners("change")).toEqual([internal])
       // Still retained by the heads-changed listener.
       expect(changes).toEqual([true])
 
       handle.off("heads-changed")
       expect(changes).toEqual([true, false])
+    })
+
+    it("public removal leaves repo-internal listeners attached", () => {
+      const document = makeDocument({ count: 1 })
+      const handle = new DocHandle<TestDoc>(document, {})
+
+      const seen: number[] = []
+      const internal = () => seen.push(handle.doc()!.count)
+      handle[kOnInternal]("change", internal)
+      handle.on("change", () => {})
+
+      handle.removeAllListeners()
+      expect(handle.listeners("change")).toEqual([internal])
+
+      // Removing a scraped internal function through the public API is a
+      // no-op: it stays attached and keeps firing.
+      handle.off("change", internal as never)
+      handle.change(d => {
+        d.count = 2
+      })
+      expect(seen).toEqual([2])
     })
 
     it("adding the same listener twice retains once", () => {
