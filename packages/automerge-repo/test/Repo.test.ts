@@ -381,6 +381,28 @@ describe("Repo", () => {
       assert.equal(v?.foo, "bar")
     })
 
+    it("keeps saving and serving a document after a consumer's removeAllListeners", async () => {
+      const { repo, storageAdapter } = setup()
+      const handle = repo.create<TestDoc>()
+      handle.on("change", () => {})
+
+      handle.removeAllListeners()
+      handle.change(d => {
+        d.foo = "bar"
+      })
+      await repo.flush()
+
+      const repo2 = new Repo({
+        storage: storageAdapter,
+      })
+      const reloaded = await repo2.find<TestDoc>(handle.url)
+      assert.equal(reloaded.doc()?.foo, "bar")
+
+      const again = await repo.find<TestDoc>(handle.url)
+      assert.equal(again, handle)
+      assert.equal(again.doc()?.foo, "bar")
+    })
+
     it("can save several documents in quick succession", async () => {
       // See https://github.com/automerge/automerge-repo/pull/471
       const { repo, storageAdapter } = setup()
