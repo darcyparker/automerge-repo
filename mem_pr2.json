@@ -1,0 +1,250 @@
+{
+  "meta": {
+    "rounds": 24,
+    "newDocsPerRound": 15,
+    "changesPerDoc": 15,
+    "revisitsPerRound": 10
+  },
+  "samples": [
+    {
+      "round": 0,
+      "totalDocsCreated": 15,
+      "heapUsedMB": 25.89,
+      "rssMB": 150.38,
+      "externalMB": 6.07,
+      "arrayBuffersMB": 0.12,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 1,
+      "totalDocsCreated": 30,
+      "heapUsedMB": 26.02,
+      "rssMB": 153.38,
+      "externalMB": 7.08,
+      "arrayBuffersMB": 0.13,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 2,
+      "totalDocsCreated": 45,
+      "heapUsedMB": 26.12,
+      "rssMB": 153.88,
+      "externalMB": 7.34,
+      "arrayBuffersMB": 0.14,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 3,
+      "totalDocsCreated": 60,
+      "heapUsedMB": 26.19,
+      "rssMB": 154.13,
+      "externalMB": 7.35,
+      "arrayBuffersMB": 0.15,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 4,
+      "totalDocsCreated": 75,
+      "heapUsedMB": 26.32,
+      "rssMB": 154.13,
+      "externalMB": 7.36,
+      "arrayBuffersMB": 0.16,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 5,
+      "totalDocsCreated": 90,
+      "heapUsedMB": 26.39,
+      "rssMB": 160.6,
+      "externalMB": 7.37,
+      "arrayBuffersMB": 0.17,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 6,
+      "totalDocsCreated": 105,
+      "heapUsedMB": 26.44,
+      "rssMB": 160.6,
+      "externalMB": 7.37,
+      "arrayBuffersMB": 0.18,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 7,
+      "totalDocsCreated": 120,
+      "heapUsedMB": 26.53,
+      "rssMB": 150.07,
+      "externalMB": 7.38,
+      "arrayBuffersMB": 0.18,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 8,
+      "totalDocsCreated": 135,
+      "heapUsedMB": 26.56,
+      "rssMB": 151.57,
+      "externalMB": 7.39,
+      "arrayBuffersMB": 0.19,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 9,
+      "totalDocsCreated": 150,
+      "heapUsedMB": 26.61,
+      "rssMB": 151.82,
+      "externalMB": 7.4,
+      "arrayBuffersMB": 0.2,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 10,
+      "totalDocsCreated": 165,
+      "heapUsedMB": 26.7,
+      "rssMB": 151.82,
+      "externalMB": 7.41,
+      "arrayBuffersMB": 0.21,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 11,
+      "totalDocsCreated": 180,
+      "heapUsedMB": 26.75,
+      "rssMB": 151.82,
+      "externalMB": 7.54,
+      "arrayBuffersMB": 0.22,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 12,
+      "totalDocsCreated": 195,
+      "heapUsedMB": 26.82,
+      "rssMB": 152.07,
+      "externalMB": 7.55,
+      "arrayBuffersMB": 0.23,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 13,
+      "totalDocsCreated": 210,
+      "heapUsedMB": 26.85,
+      "rssMB": 152.07,
+      "externalMB": 7.56,
+      "arrayBuffersMB": 0.24,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 14,
+      "totalDocsCreated": 225,
+      "heapUsedMB": 26.95,
+      "rssMB": 152.07,
+      "externalMB": 7.57,
+      "arrayBuffersMB": 0.25,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 15,
+      "totalDocsCreated": 240,
+      "heapUsedMB": 26.96,
+      "rssMB": 152.07,
+      "externalMB": 7.58,
+      "arrayBuffersMB": 0.25,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 16,
+      "totalDocsCreated": 255,
+      "heapUsedMB": 27,
+      "rssMB": 152.07,
+      "externalMB": 7.59,
+      "arrayBuffersMB": 0.26,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 17,
+      "totalDocsCreated": 270,
+      "heapUsedMB": 27.03,
+      "rssMB": 152.07,
+      "externalMB": 7.6,
+      "arrayBuffersMB": 0.27,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 18,
+      "totalDocsCreated": 285,
+      "heapUsedMB": 27.14,
+      "rssMB": 152.07,
+      "externalMB": 7.61,
+      "arrayBuffersMB": 0.28,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 19,
+      "totalDocsCreated": 300,
+      "heapUsedMB": 27.13,
+      "rssMB": 152.07,
+      "externalMB": 7.61,
+      "arrayBuffersMB": 0.29,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 20,
+      "totalDocsCreated": 315,
+      "heapUsedMB": 27.26,
+      "rssMB": 152.32,
+      "externalMB": 7.62,
+      "arrayBuffersMB": 0.3,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 21,
+      "totalDocsCreated": 330,
+      "heapUsedMB": 27.21,
+      "rssMB": 152.32,
+      "externalMB": 7.63,
+      "arrayBuffersMB": 0.31,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 22,
+      "totalDocsCreated": 345,
+      "heapUsedMB": 27.29,
+      "rssMB": 152.32,
+      "externalMB": 7.64,
+      "arrayBuffersMB": 0.32,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    },
+    {
+      "round": 23,
+      "totalDocsCreated": 360,
+      "heapUsedMB": 27.3,
+      "rssMB": 152.32,
+      "externalMB": 7.65,
+      "arrayBuffersMB": 0.33,
+      "serverDocsInMemory": 0,
+      "serverDocSynchronizers": 0
+    }
+  ]
+}
