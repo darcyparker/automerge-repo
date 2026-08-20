@@ -7,10 +7,17 @@ import type { DocHandle } from "../DocHandle.js"
 import { KIND } from "./types.js"
 import type { CursorRange, PathSegment, Pattern } from "./types.js"
 import { matchesPattern } from "./utils.js"
-import { kOnInternal, kReleaseDocument, kRetainDocument } from "../internals.js"
+import {
+  kOnceOriginal,
+  kOnInternal,
+  kReleaseDocument,
+  kRetainDocument,
+} from "../internals.js"
 
 /** Event listener stored in the registry. Payload shape is event-specific. */
-type Listener = (payload: any) => void
+type Listener = ((payload: any) => void) & {
+  [kOnceOriginal]?: (payload: any) => void
+}
 
 /**
  * A change accumulated for one handle during dispatch: patches already
@@ -242,15 +249,24 @@ export class HandleRegistry {
     if (external) this.document[kRetainDocument]()
   }
 
-  /** Remove one external listener. Repo-internal listeners are not
-   * removable through the public API. */
+  /** Remove one external listener, matching `once()` wrappers by the
+   * original listener. Repo-internal listeners are not removable through
+   * the public API. */
   removeListener<T>(handle: DocHandle<T>, event: string, fn: Listener): void {
     const m = this.#listeners.get(handle)
     if (!m) return
     const s = m.get(event)
-    if (!s || !s.get(fn)) return
-    s.delete(fn)
-    this.document[kReleaseDocument]()
+    if (!s) return
+    if (s.get(fn)) {
+      s.delete(fn)
+      this.document[kReleaseDocument]()
+    } else {
+      for (const [candidate, external] of s) {
+        if (!external || candidate[kOnceOriginal] !== fn) continue
+        s.delete(candidate)
+        this.document[kReleaseDocument]()
+      }
+    }
     if (s.size === 0) m.delete(event)
     if (m.size === 0) this.#listeners.delete(handle)
   }

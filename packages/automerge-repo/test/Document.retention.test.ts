@@ -147,6 +147,25 @@ describe("Document external retention", () => {
       expect(changes).toEqual([true, false])
     })
 
+    it("off(event, fn) removes a once() wrapper by the original listener", () => {
+      const document = makeDocument({ count: 1 })
+      const changes: boolean[] = []
+      document[kOnRetainChange] = retained => changes.push(retained)
+      const handle = new DocHandle<TestDoc>(document, {})
+
+      const listener = vi.fn()
+      handle.once("change", listener)
+      expect(changes).toEqual([true])
+
+      handle.off("change", listener)
+      expect(changes).toEqual([true, false])
+
+      handle.change(d => {
+        d.count = 2
+      })
+      expect(listener).not.toHaveBeenCalled()
+    })
+
     it("public removal leaves repo-internal listeners attached", () => {
       const document = makeDocument({ count: 1 })
       const handle = new DocHandle<TestDoc>(document, {})
