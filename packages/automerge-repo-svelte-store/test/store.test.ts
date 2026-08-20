@@ -32,6 +32,33 @@ describe("createAutomergeStore", () => {
     expect(docStore!.handle.listenerCount("change")).toBe(base)
   })
 
+  it("catches up when a subscriber returns after a quiet period", async () => {
+    const repo = new Repo({})
+    const handle = repo.create<Counter>({ count: 0 })
+    const docStore = await createAutomergeStore(repo).find<Counter>(handle.url)
+
+    const first = docStore!.subscribe(() => {})
+    first()
+
+    // Change while nobody subscribes: no listener is attached, so the store
+    // must refresh from the handle when the next subscriber arrives.
+    docStore!.change(d => {
+      d.count = 42
+    })
+
+    let latest: Counter | null = null
+    const unsub = docStore!.subscribe(value => {
+      latest = value
+    })
+    expect(latest!.count).toBe(42)
+
+    docStore!.change(d => {
+      d.count = 43
+    })
+    expect(latest!.count).toBe(43)
+    unsub()
+  })
+
   it("reflects document changes while subscribed", async () => {
     const repo = new Repo({})
     const handle = repo.create<Counter>({ count: 0 })
