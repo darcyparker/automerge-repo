@@ -43,7 +43,8 @@ function makeGatedInterceptor(): BlobInterceptor & { rejectIncoming: boolean } {
     ) {
       if (interceptor.rejectIncoming) return null
       if (
-        blob.length < PREFIX.length || !PREFIX.every((b, i) => blob[i] === b)
+        blob.length < PREFIX.length ||
+        !PREFIX.every((b, i) => blob[i] === b)
       ) {
         return null
       }

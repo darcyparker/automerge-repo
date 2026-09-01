@@ -1263,7 +1263,8 @@ export class SubductionSource implements DocumentSource {
         e
       )
     }
-    if (!blobsWithIds) blobsWithIds = allBlobs.map(blob => ({ idHex: "", blob }))
+    if (!blobsWithIds)
+      blobsWithIds = allBlobs.map(blob => ({ idHex: "", blob }))
     blobsWithIds.sort((a, b) => b.blob.byteLength - a.blob.byteLength)
 
     // Record these IDs as known hashes since nothing in subduction's storage
