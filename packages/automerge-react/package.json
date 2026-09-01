@@ -1,6 +1,6 @@
 {
   "name": "@automerge/react",
-  "version": "2.6.0-subduction.47",
+  "version": "2.6.0-subduction.48",
   "description": "A quick-import React package for Automerge Repo",
   "repository": {
     "type": "git",
