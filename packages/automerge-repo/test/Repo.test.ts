@@ -21,6 +21,7 @@ import {
   DocHandle,
   DocumentId,
   LegacyDocumentId,
+  Message,
   PeerId,
   SharePolicy,
 } from "../src/index.js"
@@ -277,6 +278,22 @@ describe("Repo", () => {
       await assert.rejects(() =>
         charlie.find("automerge:uKK1dJ4vE3E6r27kz5bsFaCykvM" as AutomergeUrl)
       )
+    })
+
+    it("releases a peer's metadata when it disconnects", async () => {
+      const alice = new Repo({ peerId: "alice" as PeerId })
+      const [aliceToBob] = DummyNetworkAdapter.createConnectedPair()
+      alice.networkSubsystem.addNetworkAdapter(aliceToBob)
+      await alice.networkSubsystem.whenReady()
+
+      aliceToBob.emit("peer-candidate", {
+        peerId: "bob" as PeerId,
+        peerMetadata: { storageId: "bob-storage" as any, isEphemeral: false },
+      })
+      assert.equal(alice.getStorageIdOfPeer("bob" as PeerId), "bob-storage")
+
+      aliceToBob.emit("peer-disconnected", { peerId: "bob" as PeerId })
+      assert.equal(alice.getStorageIdOfPeer("bob" as PeerId), undefined)
     })
 
     it("should not return an unavailable handle on second request", async () => {
@@ -2359,6 +2376,145 @@ describe("Repo", () => {
       assert.deepStrictEqual(charlieHandle.doc(), { foo: "baz" })
 
       teardown()
+    })
+  })
+
+  describe("peer re-engagement after cache eviction", () => {
+    it("resumes pushing updates to a passive peer with persisted sync state", async () => {
+      // A relay-shaped repo: announces nothing, allows access, persists.
+      const storage = new DummyStorageAdapter()
+      const server = new Repo({
+        peerId: "server" as PeerId,
+        storage,
+        sharePolicy: async () => false,
+        saveDebounceRate: 1,
+      })
+      const alice = new Repo({ peerId: "alice" as PeerId, saveDebounceRate: 1 })
+      const bob = new Repo({ peerId: "bob" as PeerId, saveDebounceRate: 1 })
+
+      // Wire the pairs by hand: the server only persists sync state for
+      // peers that announce a storageId, which connectRepos' empty
+      // peer-candidate metadata doesn't carry.
+      const connectToServer = (repo: Repo, peerId: PeerId) => {
+        const [toServer, fromServer] = DummyNetworkAdapter.createConnectedPair()
+        repo.networkSubsystem.addNetworkAdapter(toServer)
+        server.networkSubsystem.addNetworkAdapter(fromServer)
+        toServer.emit("peer-candidate", {
+          peerId: "server" as PeerId,
+          peerMetadata: {},
+        })
+        fromServer.emit("peer-candidate", {
+          peerId,
+          peerMetadata: {
+            storageId: `${peerId}-storage` as any,
+            isEphemeral: false,
+          },
+        })
+      }
+      connectToServer(alice, "alice" as PeerId)
+      connectToServer(bob, "bob" as PeerId)
+      await Promise.all([
+        alice.networkSubsystem.whenReady(),
+        bob.networkSubsystem.whenReady(),
+        server.networkSubsystem.whenReady(),
+      ])
+
+      const aliceHandle = alice.create<{ foo: string }>({ foo: "v1" })
+      const { documentId } = aliceHandle
+
+      // Bob requests the document through the server and syncs it.
+      const bobHandle = await bob.find<{ foo: string }>(aliceHandle.url)
+      expect(bobHandle.doc()).toEqual({ foo: "v1" })
+
+      // Wait for the server to persist sync state for both peers.
+      await vi.waitFor(async () => {
+        const chunks = await storage.loadRange([documentId, "sync-state"])
+        expect(chunks.length).toBeGreaterThanOrEqual(2)
+      })
+
+      // Evict the document from the server while bob stays connected.
+      await server.removeFromCache(documentId)
+      expect(server.handles[documentId]).toBeUndefined()
+
+      // Alice edits: the server re-creates its synchronizer from the
+      // inbound message and must resume pushing to bob, whose engagement
+      // is known only from his persisted sync state.
+      aliceHandle.change(d => {
+        d.foo = "v2"
+      })
+      await vi.waitFor(() => expect(bobHandle.doc()).toEqual({ foo: "v2" }))
+    })
+
+    it("does not re-engage a peer whose persisted sync state shares no heads", async () => {
+      // The re-engagement predicate requires sharedHeads.length > 0 as proof
+      // the peer actually received the document. A peer that exchanged sync
+      // messages without converging leaves a persisted state with no shared
+      // heads, and must not be treated as subscribed: announcing to it would
+      // hand the document to a peer this share policy never granted it to.
+      const storage = new DummyStorageAdapter()
+      const server = new Repo({
+        peerId: "server" as PeerId,
+        storage,
+        sharePolicy: async () => false,
+        saveDebounceRate: 1,
+      })
+      const alice = new Repo({ peerId: "alice" as PeerId, saveDebounceRate: 1 })
+      const eve = new Repo({ peerId: "eve" as PeerId, saveDebounceRate: 1 })
+
+      const connectToServer = (repo: Repo, peerId: PeerId) => {
+        const [toServer, fromServer] = DummyNetworkAdapter.createConnectedPair()
+        repo.networkSubsystem.addNetworkAdapter(toServer)
+        server.networkSubsystem.addNetworkAdapter(fromServer)
+        toServer.emit("peer-candidate", {
+          peerId: "server" as PeerId,
+          peerMetadata: {},
+        })
+        fromServer.emit("peer-candidate", {
+          peerId,
+          peerMetadata: {
+            storageId: `${peerId}-storage` as any,
+            isEphemeral: false,
+          },
+        })
+        return toServer
+      }
+      connectToServer(alice, "alice" as PeerId)
+      await alice.networkSubsystem.whenReady()
+      await server.networkSubsystem.whenReady()
+
+      const aliceHandle = alice.create<{ foo: string }>({ foo: "v1" })
+      const { documentId } = aliceHandle
+      await vi.waitFor(async () => {
+        const chunks = await storage.loadRange([documentId, "sync-state"])
+        expect(chunks.length).toBeGreaterThanOrEqual(1)
+      })
+
+      // Eve has a persisted sync state for this document but never received
+      // it: an initial state shares no heads.
+      await server.storageSubsystem!.saveSyncState(
+        documentId,
+        "eve-storage" as any,
+        A.initSyncState()
+      )
+      const evesLink = connectToServer(eve, "eve" as PeerId)
+      await eve.networkSubsystem.whenReady()
+
+      // Record what the server sends Eve.
+      const evesMessages: Message[] = []
+      evesLink.on("message", message => evesMessages.push(message))
+
+      await server.removeFromCache(documentId)
+
+      // Alice edits; the server re-creates the synchronizer and re-engages
+      // only peers with shared heads. Eve is not one of them.
+      aliceHandle.change(d => {
+        d.foo = "v2"
+      })
+      await vi.waitFor(() =>
+        expect(server.handles[documentId]?.doc()).toEqual({ foo: "v2" })
+      )
+      expect(evesMessages.filter(m => m.documentId === documentId)).toEqual([])
+      expect(eve.handles[documentId]).toBeUndefined()
     })
   })
 

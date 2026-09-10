@@ -12,13 +12,20 @@ export default defineConfig({
     // instanceof tests when going back and forth from wasm-bindgen
     environment: "happy-dom",
 
+    // Expose globalThis.gc to test workers so GC-dependent tests can opt in.
+    // Vitest 4 reads `test.execArgv` per project (cli-api: project.config.execArgv);
+    // poolOptions on its own doesn't reach project workers under `projects`.
+    execArgv: ["--expose-gc"],
+
     coverage: {
       provider: "v8",
       reporter: ["lcov", "text", "html"],
       skipFull: true,
       exclude: [
         "**/fuzz",
-        "**/helpers",
+        // Test doubles and shared test utilities that live under src.
+        "**/src/helpers/Dummy*",
+        "**/src/helpers/tests/**",
         "**/coverage",
         "examples/**/*",
         "docs/**/*",
