@@ -24,6 +24,9 @@ import { WebSocketClientAdapter } from "../src/WebSocketClientAdapter.js"
 import { WebSocketServerAdapter } from "../src/WebSocketServerAdapter.js"
 import { encodeHeads } from "../../automerge-repo/dist/AutomergeUrl.js"
 
+/** Convergence takes a handful of round trips; the bug this guards is unbounded. */
+const MAX_SYNC_EXCHANGES = 20
+
 describe("Websocket adapters", () => {
   const browserPeerId = "browser" as PeerId
   const serverPeerId = "server" as PeerId
@@ -776,6 +779,18 @@ describe("Websocket adapters", () => {
 
       // Now create a websocket sync server with the original document in it's storage
       const adapter = new WebSocketServerAdapter(socket)
+
+      // A join from a peerId that already has a socket must close the old one
+      // and emit peer-disconnected before announcing the new connection.
+      // Observed on this adapter, not the one setupServer() returns unused.
+      const peerEvents: string[] = []
+      adapter.on("peer-disconnected", ({ peerId }) =>
+        peerEvents.push(`disconnected:${peerId}`)
+      )
+      adapter.on("peer-candidate", ({ peerId }) =>
+        peerEvents.push(`candidate:${peerId}`)
+      )
+
       const repo = new Repo({
         network: [adapter],
         storage,
@@ -853,7 +868,14 @@ describe("Websocket adapters", () => {
       assertIsPeerMessage(await serverMessages.next())
 
       // Now, we start syncing. If we're not buggy, this loop should terminate.
+      // The bug shows up as an unbounded exchange, so bound it rather than
+      // letting it run into the suite timeout.
+      let exchanges = 0
       while (true) {
+        assert.ok(
+          ++exchanges <= MAX_SYNC_EXCHANGES,
+          `sync did not converge within ${MAX_SYNC_EXCHANGES} exchanges`
+        )
         ;[clientState, message] = A.generateSyncMessage(clientDoc, clientState)
         if (message) {
           clientSocket.send(
@@ -886,6 +908,12 @@ describe("Websocket adapters", () => {
       if (!headsAreSame(encodeHeads(localHeads), remoteHeads)) {
         throw new Error("heads not equal")
       }
+
+      assert.deepStrictEqual(peerEvents, [
+        "candidate:client",
+        "disconnected:client",
+        "candidate:client",
+      ])
     })
 
     describe("teardown (resource-leak regressions)", () => {
