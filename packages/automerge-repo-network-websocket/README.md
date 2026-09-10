@@ -211,7 +211,10 @@ Sent when a peer wants to send an ephemeral message to another peer
   senderId: peer_id,
   ; The target of this message
   targetId: peer_id,
-  ; The sequence number of this message within its session
+  ; The sequence number of this broadcast within its session. One broadcast is
+  ; stamped once and relayed unchanged, so copies arriving by different paths
+  ; share a count. Receivers keep the highest count seen per (senderId,
+  ; sessionId) and ignore anything not greater.
   count: uint,
   ; The unique session identifying this stream of ephemeral messages
   sessionId: str,

@@ -5,6 +5,7 @@ import { DocHandle } from "../DocHandle.js"
 import { parseAutomergeUrl } from "../AutomergeUrl.js"
 import {
   DocMessage,
+  EphemeralStamp,
   MessageContents,
   OpenDocMessage,
 } from "../network/messages.js"
@@ -70,6 +71,11 @@ export interface AutomergeSyncConfig {
    * {@link SHARE_POLICY_CONCURRENCY}.
    */
   sharePolicyConcurrency?: number
+
+  /**
+   * Allocates one {@link EphemeralStamp} per outbound broadcast.
+   */
+  stampEphemeralMessage: () => EphemeralStamp
 }
 
 interface CollectionSynchronizerEvents {
@@ -267,6 +273,7 @@ export class CollectionSynchronizer
       query,
       networkReady: this.#networkReady,
       shareConfig: this.#config.shareConfig,
+      stampEphemeralMessage: this.#config.stampEphemeralMessage,
     })
 
     docSync.on("message", event => this.emit("message", event))

@@ -198,6 +198,7 @@ export class Repo extends EventEmitter<RepoEvents> {
           ),
         syncStateLoadConcurrency,
         sharePolicyConcurrency,
+        stampEphemeralMessage: () => networkSubsystem.stampEphemeralMessage(),
       },
       denylist
     )

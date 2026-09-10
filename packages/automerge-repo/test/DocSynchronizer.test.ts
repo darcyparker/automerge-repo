@@ -12,7 +12,7 @@ import { eventPromise } from "../src/helpers/eventPromise.js"
 import { MessageContents } from "../src/network/messages.js"
 import { DocSynchronizer } from "../src/synchronizer/DocSynchronizer.js"
 import type { ShareConfig } from "../src/synchronizer/DocSynchronizer.js"
-import { PeerId } from "../src/types.js"
+import { PeerId, SessionId } from "../src/types.js"
 import { TestDoc } from "./types.js"
 import { createTestHandle, createTestQuery } from "./helpers/testHandle.js"
 
@@ -38,11 +38,17 @@ function createDocSynchronizer(
   if (!query) {
     query = new DocumentQuery(handle)
   }
+  let count = 0
   return new DocSynchronizer({
     handle,
     query,
     networkReady,
     shareConfig: shareConfig ?? defaultShareConfig,
+    stampEphemeralMessage: () => ({
+      senderId: alice,
+      sessionId: "test-session" as SessionId,
+      count: ++count,
+    }),
   })
 }
 
@@ -558,5 +564,134 @@ describe("DocSynchronizer", () => {
     const unavailableMsg = messages.find(m => m.type === "doc-unavailable")
     assert.ok(unavailableMsg, "should have sent doc-unavailable")
     assert.equal(unavailableMsg!.targetId, bob)
+  })
+  describe("a share-policy peer that has only sent ephemeral messages", () => {
+    /** Access without announce: served on request, never pushed to. */
+    const accessOnly: ShareConfig = {
+      announce: async () => false,
+      access: async () => true,
+    }
+
+    /** cbor: { foo: "bar" } */
+    const cborPayload = new Uint8Array([
+      0xa1, 0x63, 0x66, 0x6f, 0x6f, 0x63, 0x62, 0x61, 0x72,
+    ])
+
+    const setupWithBob = async () => {
+      const docId = parseAutomergeUrl(generateAutomergeUrl()).documentId
+      const handle = createTestHandle<TestDoc>(docId)
+      handle.update(() => Automerge.from<TestDoc>({ foo: "" }))
+      const docSync = createDocSynchronizer(
+        handle as DocHandle<unknown>,
+        undefined,
+        accessOnly
+      )
+      docSync.addPeer(bob, Promise.resolve(undefined))
+      await new Promise(setImmediate)
+
+      const messages: MessageContents[] = []
+      docSync.on("message", m => messages.push(m))
+
+      const ephemeralFromBob = {
+        type: "ephemeral" as const,
+        senderId: bob,
+        targetId: alice,
+        documentId: docId,
+        sessionId: "session-1",
+        count: 1,
+        data: cborPayload,
+      }
+
+      return { docId, handle, docSync, messages, ephemeralFromBob }
+    }
+
+    it("receives broadcasts, which it would not before it spoke", async () => {
+      const { handle, docSync, messages, ephemeralFromBob } =
+        await setupWithBob()
+
+      handle.broadcast({ hello: "before" })
+      await new Promise(setImmediate)
+      assert.equal(
+        messages.filter(m => m.type === "ephemeral").length,
+        0,
+        "an access-only peer that has not interacted is not a recipient"
+      )
+
+      docSync.receiveMessage(ephemeralFromBob)
+      await new Promise(setImmediate)
+
+      handle.broadcast({ hello: "after" })
+      await new Promise(setImmediate)
+      assert.equal(
+        messages.filter(m => m.type === "ephemeral" && m.targetId === bob)
+          .length,
+        1
+      )
+    })
+
+    it("is sent document data once it asks, even with a heads-empty sync", async () => {
+      // A sync message (not a request) carrying no heads leaves the peer's
+      // status "unknown", so only hasRequested distinguishes it from a peer
+      // that has never spoken. It has asked, so it gets an answer.
+      const { docSync, messages } = await setupWithBob()
+
+      const [, emptySync] = Automerge.generateSyncMessage(
+        Automerge.init(),
+        Automerge.initSyncState()
+      )
+      docSync.receiveMessage({
+        type: "sync",
+        senderId: bob,
+        targetId: alice,
+        documentId: docSync.documentId,
+        data: emptySync!,
+      })
+      await new Promise(setImmediate)
+      await new Promise(setImmediate)
+
+      assert.ok(
+        messages.some(m => m.type === "sync" && m.targetId === bob),
+        "a peer that sent a heads-empty sync should still get a response"
+      )
+    })
+
+    it("is not sent document data", async () => {
+      const { docSync, messages, ephemeralFromBob } = await setupWithBob()
+
+      docSync.receiveMessage(ephemeralFromBob)
+      await new Promise(setImmediate)
+      await new Promise(setImmediate)
+
+      assert.deepStrictEqual(
+        messages.filter(m => m.type === "sync" || m.type === "request"),
+        [],
+        "ephemeral traffic must not unlock document data"
+      )
+    })
+
+    it("still gets an open-doc when it later requests the document", async () => {
+      const { docId, docSync, ephemeralFromBob } = await setupWithBob()
+      const openedFor: PeerId[] = []
+      docSync.on("open-doc", e => openedFor.push(e.peerId))
+
+      docSync.receiveMessage(ephemeralFromBob)
+      await new Promise(setImmediate)
+      assert.deepStrictEqual(
+        openedFor,
+        [],
+        "presence is not a request for the document"
+      )
+
+      const bobHandle = createTestHandle<TestDoc>(docId)
+      const bobSync = createDocSynchronizer(bobHandle as DocHandle<unknown>)
+      const bobP = eventPromise(bobSync, "message")
+      bobSync.addPeer(alice, Promise.resolve(undefined))
+      const request = await bobP
+
+      docSync.receiveMessage({ ...request, senderId: bob } as any)
+      await new Promise(setImmediate)
+
+      assert.deepStrictEqual(openedFor, [bob])
+    })
   })
 })

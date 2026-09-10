@@ -8,6 +8,7 @@ import type {
 } from "./NetworkAdapterInterface.js"
 import {
   EphemeralMessage,
+  EphemeralStamp,
   MessageContents,
   RepoMessage,
   isEphemeralMessage,
@@ -125,6 +126,17 @@ export class NetworkSubsystem extends EventEmitter<NetworkSubsystemEvents> {
     networkAdapter.disconnect()
   }
 
+  /**
+   * Allocates the {@link EphemeralStamp} for one outbound broadcast.
+   */
+  stampEphemeralMessage(): EphemeralStamp {
+    return {
+      senderId: this.peerId,
+      sessionId: this.#sessionId,
+      count: ++this.#count,
+    }
+  }
+
   send(message: MessageContents) {
     const peer = this.#adaptersByPeer[message.targetId]
     if (!peer) {
@@ -139,18 +151,8 @@ export class NetworkSubsystem extends EventEmitter<NetworkSubsystemEvents> {
      */
     const prepareMessage = (message: MessageContents): RepoMessage => {
       if (message.type === "ephemeral") {
-        if ("count" in message) {
-          // existing ephemeral message from another peer; pass on without changes
-          return message as EphemeralMessage
-        } else {
-          // new ephemeral message from us; add our senderId as well as a counter and session id
-          return {
-            ...message,
-            count: ++this.#count,
-            sessionId: this.#sessionId,
-            senderId: this.peerId,
-          } as EphemeralMessage
-        }
+        // Already stamped, by us or by whoever we are relaying for.
+        return message
       } else {
         // other message type; just add our senderId
         return {
