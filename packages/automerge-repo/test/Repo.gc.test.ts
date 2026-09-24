@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest"
+import { generateAutomergeUrl } from "../src/AutomergeUrl.js"
 import { Repo } from "../src/Repo.js"
 import { DummyStorageAdapter } from "../src/helpers/DummyStorageAdapter.js"
+import { pause } from "../src/helpers/pause.js"
 import type { DocHandle } from "../src/DocHandle.js"
 import type { AutomergeUrl, DocumentId, PeerId } from "../src/index.js"
 import connectRepos from "./helpers/connectRepos.js"
@@ -205,6 +207,131 @@ describeGC("Repo GC of dropped documents", () => {
     // A fresh find re-requests the document from alice.
     const again = await bob.find<TestDoc>(aliceHandle.url)
     expect(again.doc()).toEqual({ foo: "shared" })
+  })
+})
+
+describeGC("Repo GC of storage bookkeeping", () => {
+  type ItemsDoc = { items: string[] }
+
+  // Big enough that its snapshot exceeds the 1 KiB always-compact threshold,
+  // so a save with intact bookkeeping is incremental rather than a snapshot.
+  const items = () =>
+    Array.from({ length: 200 }, (_, i) => `item-${i}-${"x".repeat(20)}`)
+
+  it("forgets the storage bookkeeping of collected documents", async () => {
+    const repo = new Repo({ storage: new DummyStorageAdapter() })
+    const probes: WeakRef<DocHandle<TestDoc>>[] = []
+
+    ;(() => {
+      for (let i = 0; i < 20; i++) {
+        probes.push(new WeakRef(repo.create<TestDoc>({ foo: `doc ${i}` })))
+      }
+    })()
+    await repo.flush()
+    expect(repo.storageSubsystem!._trackedDocumentCount).toBe(20)
+
+    expect(
+      await waitForGC(() => probes.every(p => p.deref() === undefined), 3000)
+    ).toBe(true)
+    expect(
+      await waitForGC(
+        () => repo.storageSubsystem!._trackedDocumentCount === 0,
+        2000
+      )
+    ).toBe(true)
+  })
+
+  it("keeps a held document's bookkeeping, so its next save is incremental", async () => {
+    const repo = new Repo({ storage: new DummyStorageAdapter() })
+    const handle = repo.create<ItemsDoc>({ items: items() })
+    await repo.flush()
+
+    await flushGC()
+    expect(repo.storageSubsystem!._trackedDocumentCount).toBe(1)
+
+    const saves: string[] = []
+    repo.storageSubsystem!.on("doc-saved", () => saves.push("incremental"))
+    repo.storageSubsystem!.on("doc-compacted", () => saves.push("snapshot"))
+    handle.change(d => {
+      d.items.push("one more")
+    })
+    await repo.flush()
+
+    expect(saves).toEqual(["incremental"])
+  })
+
+  it("keeps the bookkeeping while an older copy outlives removeFromCache and a re-find", async () => {
+    const repo = new Repo({ storage: new DummyStorageAdapter() })
+    // Touched only inside sync closures, so this async frame never pins it.
+    const hold: { older?: DocHandle<ItemsDoc> } = {}
+    const { documentId, url } = (() => {
+      const older = repo.create<ItemsDoc>({ items: items() })
+      hold.older = older
+      return { documentId: older.documentId, url: older.url }
+    })()
+    await repo.flush()
+    await repo.removeFromCache(documentId)
+
+    // The re-find builds a second cluster with its own save listener. Dropping
+    // it must not forget the bookkeeping the still-held older copy relies on.
+    let newerProbe!: WeakRef<DocHandle<ItemsDoc>>
+    await (async () => {
+      newerProbe = new WeakRef(await repo.find<ItemsDoc>(url))
+    })()
+    expect(await waitForGC(newerProbe, 3000)).toBe(true)
+    await flushGC()
+    expect(repo.storageSubsystem!._trackedDocumentCount).toBe(1)
+
+    const saves: string[] = []
+    repo.storageSubsystem!.on("doc-saved", () => saves.push("incremental"))
+    repo.storageSubsystem!.on("doc-compacted", () => saves.push("snapshot"))
+    ;(() => {
+      hold.older!.change(d => {
+        d.items.push("one more")
+      })
+    })()
+    // flush() only reaches documents still in the repo, so wait out the older
+    // copy's own save throttle instead.
+    await pause(150)
+    expect(saves).toEqual(["incremental"])
+
+    // Dropping the last copy releases the bookkeeping.
+    delete hold.older
+    expect(
+      await waitForGC(
+        () => repo.storageSubsystem!._trackedDocumentCount === 0,
+        3000
+      )
+    ).toBe(true)
+  })
+})
+
+describe("Repo storage bookkeeping", () => {
+  it("keeps no bookkeeping for ids that storage does not have", async () => {
+    const repo = new Repo({ storage: new DummyStorageAdapter() })
+
+    await expect(repo.find(generateAutomergeUrl())).rejects.toThrow(
+      /unavailable/
+    )
+    expect(repo.storageSubsystem!._trackedDocumentCount).toBe(0)
+  })
+
+  it("persists a document re-imported under its id after delete()", async () => {
+    // The saved heads used to outlive the deletion, so the re-imported copy
+    // (same heads) was never written back to storage.
+    const storage = new DummyStorageAdapter()
+    const repo = new Repo({ storage })
+    const handle = repo.create<TestDoc>({ foo: "bar" })
+    await repo.flush()
+    const binary = (await repo.export(handle.url))!
+
+    repo.delete(handle.documentId)
+    await pause(0) // delete() does not wait for storage removal
+    repo.import<TestDoc>(binary, { docId: handle.documentId })
+    await repo.flush()
+
+    const reloaded = await new Repo({ storage }).find<TestDoc>(handle.url)
+    expect(reloaded.doc()).toEqual({ foo: "bar" })
   })
 })
 

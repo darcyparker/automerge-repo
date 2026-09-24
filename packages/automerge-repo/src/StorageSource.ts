@@ -28,6 +28,31 @@ export class StorageSource implements DocumentSource {
     DocumentId,
     (payload: DocHandleEncodedChangePayload<any>) => void
   >()
+
+  /**
+   * saveFns per document that have not been collected yet. Usually one, since
+   * clusters share it; `detach` stops the sharing, so a document attached
+   * again while an older cluster still lives gets a second.
+   */
+  #liveSaveFns = new Map<DocumentId, number>()
+
+  /**
+   * Forgets a document's StorageSubsystem bookkeeping once its last saveFn is
+   * collected. A saveFn is retained by the clusters it listens on, and they
+   * are pinned by pending and in-flight saves and loads, so once none is left
+   * nothing can save or load the document through this source until it is
+   * attached again, and that attach reloads the bookkeeping from storage.
+   */
+  #forgetOnCollect = new FinalizationRegistry<DocumentId>(documentId => {
+    const live = (this.#liveSaveFns.get(documentId) ?? 1) - 1
+    if (live > 0) {
+      this.#liveSaveFns.set(documentId, live)
+      return
+    }
+    this.#liveSaveFns.delete(documentId)
+    this.#storage.forget(documentId)
+  })
+
   #log = makeLogger("automerge-repo:storage-source")
 
   constructor(
@@ -101,6 +126,10 @@ export class StorageSource implements DocumentSource {
           doc,
           handle,
         }: DocHandleEncodedChangePayload<any>): Promise<void> => {
+          // A save still pending when the document was deleted must not write
+          // it back. Its heads would otherwise pass as new: removeDoc() forgets
+          // the saved heads. A re-import gets a fresh, undeleted document.
+          if (handle.isDeleted()) return
           try {
             await this.#storage.saveDoc(handle.documentId, doc)
           } catch (err) {
@@ -118,6 +147,11 @@ export class StorageSource implements DocumentSource {
         this.#saveDebounceRate
       )
       this.#saveFns.set(documentId, fn)
+      this.#liveSaveFns.set(
+        documentId,
+        (this.#liveSaveFns.get(documentId) ?? 0) + 1
+      )
+      this.#forgetOnCollect.register(fn, documentId)
     }
     return fn
   }

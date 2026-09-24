@@ -502,6 +502,27 @@ describe("Repo", () => {
       )
     })
 
+    it("a change still waiting to be saved is not written back after delete", async () => {
+      const { repo, storageAdapter } = setup()
+      const handle = repo.create<TestDoc>()
+      handle.change(d => {
+        d.foo = "bar"
+      })
+      await repo.flush()
+
+      // Throttled, so its save is still pending when the delete lands.
+      handle.change(d => {
+        d.foo = "baz"
+      })
+      repo.delete(handle.documentId)
+      await pause(20)
+
+      assert(
+        !storageAdapter.keys().some(k => k.includes(handle.documentId)),
+        "a save pending from before the delete should not write the doc back"
+      )
+    })
+
     it("shutdown() flushes pending writes before disconnecting", async () => {
       const storageAdapter = new DummyStorageAdapter()
       const networkAdapter = new DummyNetworkAdapter()

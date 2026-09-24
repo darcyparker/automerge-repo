@@ -39,7 +39,14 @@ export class StorageSubsystem extends EventEmitter<StorageSubsystemEvents> {
   /** The storage adapter to use for saving and loading documents */
   #storageAdapter: StorageAdapterInterface
 
-  /** Record of the latest heads we've loaded or saved for each document  */
+  /**
+   * Record of the latest heads we've loaded or saved for each document.
+   *
+   * This and `#chunkInfos` are per-document bookkeeping that nothing prunes
+   * on its own: an entry stays until `forget()` is called. The Repo's
+   * `StorageSource` forgets a document once no live copy of it can save or
+   * load through the subsystem any more.
+   */
   #storedHeads: SavedHeads = new SavedHeads()
 
   /** Metadata on the chunks we've already loaded for each document */
@@ -167,8 +174,14 @@ export class StorageSubsystem extends EventEmitter<StorageSubsystemEvents> {
       binaries.push(chunk.data)
     }
 
-    // Store chunk infos for future reference
-    this.#chunkInfos.set(documentId, chunkInfos)
+    // Store chunk infos for future reference. A missing entry reads as "no
+    // chunks", so a document storage doesn't hold leaves no entry behind;
+    // otherwise every id ever looked up would keep one.
+    if (chunkInfos.length > 0) {
+      this.#chunkInfos.set(documentId, chunkInfos)
+    } else {
+      this.#chunkInfos.delete(documentId)
+    }
 
     // If no chunks were found, return null
     if (binaries.length === 0) {
@@ -225,9 +238,36 @@ export class StorageSubsystem extends EventEmitter<StorageSubsystemEvents> {
   }
 
   /**
+   * Drop the in-memory bookkeeping (last saved heads and known chunks) for a
+   * document. Without this, the entries for every document ever loaded or
+   * saved live as long as the subsystem.
+   *
+   * Always safe: the next load rebuilds both from storage. A save made
+   * without them writes a full snapshot instead of an incremental, and the
+   * older chunks stay in storage until a compaction after the next load
+   * removes them.
+   */
+  forget(documentId: DocumentId): void {
+    this.#storedHeads.delete(documentId)
+    this.#chunkInfos.delete(documentId)
+  }
+
+  /** @internal Number of documents with in-memory bookkeeping. For tests. */
+  get _trackedDocumentCount(): number {
+    return new Set([
+      ...this.#chunkInfos.keys(),
+      ...this.#storedHeads.documentIds(),
+    ]).size
+  }
+
+  /**
    * Removes the Automerge document with the given ID from storage
    */
   async removeDoc(documentId: DocumentId) {
+    // Forget before the first await: storage is about to hold nothing for the
+    // document, so a save issued meanwhile (e.g. re-importing it under the
+    // same id) must not be skipped as unchanged since the last save.
+    this.forget(documentId)
     await this.#storageAdapter.removeRange([documentId, "snapshot"])
     await this.#storageAdapter.removeRange([documentId, "incremental"])
     await this.#storageAdapter.removeRange([documentId, "sync-state"])

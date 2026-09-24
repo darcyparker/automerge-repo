@@ -537,6 +537,57 @@ describe("StorageSubsystem", () => {
   })
 })
 
+describe("StorageSubsystem bookkeeping", () => {
+  const newDocumentId = () =>
+    parseAutomergeUrl(generateAutomergeUrl()).documentId
+
+  it("keeps no entry for a document that storage does not have", async () => {
+    const storage = new StorageSubsystem(new DummyStorageAdapter())
+
+    assert.equal(await storage.loadDoc(newDocumentId()), null)
+    assert.equal(storage._trackedDocumentCount, 0)
+  })
+
+  it("forget() drops a document's entry and later saves still persist it", async () => {
+    const adapter = new DummyStorageAdapter()
+    const storage = new StorageSubsystem(adapter)
+    const documentId = newDocumentId()
+
+    let doc = A.from<{ n: number }>({ n: 1 })
+    await storage.saveDoc(documentId, doc)
+    assert.equal(storage._trackedDocumentCount, 1)
+
+    storage.forget(documentId)
+    assert.equal(storage._trackedDocumentCount, 0)
+
+    doc = A.change(doc, d => {
+      d.n = 2
+    })
+    await storage.saveDoc(documentId, doc)
+
+    const reloaded = await new StorageSubsystem(adapter).loadDoc<{
+      n: number
+    }>(documentId)
+    assert.equal(reloaded?.n, 2)
+  })
+
+  it("saves a document again after removeDoc, even with unchanged heads", async () => {
+    // The saved heads used to outlive removeDoc, so re-saving the same
+    // document looked like a no-op and nothing was written.
+    const adapter = new DummyStorageAdapter()
+    const storage = new StorageSubsystem(adapter)
+    const documentId = newDocumentId()
+    const doc = A.from({ foo: "bar" })
+
+    await storage.saveDoc(documentId, doc)
+    await storage.removeDoc(documentId)
+    await storage.saveDoc(documentId, doc)
+
+    const reloaded = await new StorageSubsystem(adapter).loadDoc(documentId)
+    assert.deepStrictEqual(reloaded, doc)
+  })
+})
+
 describe("StorageSubsystem compaction recovery", () => {
   it("keeps compacting after a failed snapshot write (does not get stuck not-compacting)", async () => {
     // Simulate a storage write that fails mid-compaction. Real, usually
