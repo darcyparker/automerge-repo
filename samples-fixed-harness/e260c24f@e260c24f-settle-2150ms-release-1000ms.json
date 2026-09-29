@@ -1,0 +1,256 @@
+{
+  "ref": "e260c24f",
+  "commit": "e260c24f4093f5b0c76f08f3ed4fcb92f268dc5c",
+  "label": "e260c24f@e260c24f settle=2150ms release=1000ms",
+  "collectedAt": "2026-09-29T12:59:25.414Z",
+  "meta": {
+    "rounds": 24,
+    "newDocsPerRound": 15,
+    "changesPerDoc": 15,
+    "revisitsPerRound": 10,
+    "settleMs": 2150,
+    "releaseMs": 1000
+  },
+  "samples": [
+    {
+      "round": 0,
+      "totalDocsCreated": 15,
+      "heapUsedMB": 26.03,
+      "rssMB": 149.1,
+      "externalMB": 6.07,
+      "arrayBuffersMB": 0.12,
+      "serverDocsInMemory": 15,
+      "serverDocSynchronizers": 15
+    },
+    {
+      "round": 1,
+      "totalDocsCreated": 30,
+      "heapUsedMB": 26.45,
+      "rssMB": 150.35,
+      "externalMB": 6.58,
+      "arrayBuffersMB": 0.13,
+      "serverDocsInMemory": 30,
+      "serverDocSynchronizers": 30
+    },
+    {
+      "round": 2,
+      "totalDocsCreated": 45,
+      "heapUsedMB": 26.88,
+      "rssMB": 150.85,
+      "externalMB": 6.9,
+      "arrayBuffersMB": 0.14,
+      "serverDocsInMemory": 45,
+      "serverDocSynchronizers": 45
+    },
+    {
+      "round": 3,
+      "totalDocsCreated": 60,
+      "heapUsedMB": 27.3,
+      "rssMB": 151.1,
+      "externalMB": 7.16,
+      "arrayBuffersMB": 0.15,
+      "serverDocsInMemory": 60,
+      "serverDocSynchronizers": 60
+    },
+    {
+      "round": 4,
+      "totalDocsCreated": 75,
+      "heapUsedMB": 27.74,
+      "rssMB": 151.85,
+      "externalMB": 7.48,
+      "arrayBuffersMB": 0.16,
+      "serverDocsInMemory": 75,
+      "serverDocSynchronizers": 75
+    },
+    {
+      "round": 5,
+      "totalDocsCreated": 90,
+      "heapUsedMB": 28.1,
+      "rssMB": 157.86,
+      "externalMB": 7.74,
+      "arrayBuffersMB": 0.17,
+      "serverDocsInMemory": 90,
+      "serverDocSynchronizers": 90
+    },
+    {
+      "round": 6,
+      "totalDocsCreated": 105,
+      "heapUsedMB": 28.5,
+      "rssMB": 158.11,
+      "externalMB": 8,
+      "arrayBuffersMB": 0.18,
+      "serverDocsInMemory": 105,
+      "serverDocSynchronizers": 105
+    },
+    {
+      "round": 7,
+      "totalDocsCreated": 120,
+      "heapUsedMB": 28.89,
+      "rssMB": 154.14,
+      "externalMB": 8.32,
+      "arrayBuffersMB": 0.18,
+      "serverDocsInMemory": 120,
+      "serverDocSynchronizers": 120
+    },
+    {
+      "round": 8,
+      "totalDocsCreated": 135,
+      "heapUsedMB": 29.24,
+      "rssMB": 155.14,
+      "externalMB": 8.58,
+      "arrayBuffersMB": 0.19,
+      "serverDocsInMemory": 135,
+      "serverDocSynchronizers": 135
+    },
+    {
+      "round": 9,
+      "totalDocsCreated": 150,
+      "heapUsedMB": 29.61,
+      "rssMB": 155.64,
+      "externalMB": 8.9,
+      "arrayBuffersMB": 0.2,
+      "serverDocsInMemory": 150,
+      "serverDocSynchronizers": 150
+    },
+    {
+      "round": 10,
+      "totalDocsCreated": 165,
+      "heapUsedMB": 30.03,
+      "rssMB": 155.89,
+      "externalMB": 9.16,
+      "arrayBuffersMB": 0.21,
+      "serverDocsInMemory": 165,
+      "serverDocSynchronizers": 165
+    },
+    {
+      "round": 11,
+      "totalDocsCreated": 180,
+      "heapUsedMB": 30.45,
+      "rssMB": 156.64,
+      "externalMB": 9.48,
+      "arrayBuffersMB": 0.22,
+      "serverDocsInMemory": 180,
+      "serverDocSynchronizers": 180
+    },
+    {
+      "round": 12,
+      "totalDocsCreated": 195,
+      "heapUsedMB": 30.81,
+      "rssMB": 157.39,
+      "externalMB": 9.74,
+      "arrayBuffersMB": 0.23,
+      "serverDocsInMemory": 195,
+      "serverDocSynchronizers": 195
+    },
+    {
+      "round": 13,
+      "totalDocsCreated": 210,
+      "heapUsedMB": 31.17,
+      "rssMB": 157.89,
+      "externalMB": 10.06,
+      "arrayBuffersMB": 0.24,
+      "serverDocsInMemory": 210,
+      "serverDocSynchronizers": 210
+    },
+    {
+      "round": 14,
+      "totalDocsCreated": 225,
+      "heapUsedMB": 31.54,
+      "rssMB": 158.39,
+      "externalMB": 10.32,
+      "arrayBuffersMB": 0.25,
+      "serverDocsInMemory": 225,
+      "serverDocSynchronizers": 225
+    },
+    {
+      "round": 15,
+      "totalDocsCreated": 240,
+      "heapUsedMB": 31.89,
+      "rssMB": 161.39,
+      "externalMB": 10.64,
+      "arrayBuffersMB": 0.25,
+      "serverDocsInMemory": 240,
+      "serverDocSynchronizers": 240
+    },
+    {
+      "round": 16,
+      "totalDocsCreated": 255,
+      "heapUsedMB": 32.23,
+      "rssMB": 163.64,
+      "externalMB": 10.9,
+      "arrayBuffersMB": 0.26,
+      "serverDocsInMemory": 255,
+      "serverDocSynchronizers": 255
+    },
+    {
+      "round": 17,
+      "totalDocsCreated": 270,
+      "heapUsedMB": 32.59,
+      "rssMB": 164.14,
+      "externalMB": 11.22,
+      "arrayBuffersMB": 0.27,
+      "serverDocsInMemory": 270,
+      "serverDocSynchronizers": 270
+    },
+    {
+      "round": 18,
+      "totalDocsCreated": 285,
+      "heapUsedMB": 33.01,
+      "rssMB": 164.39,
+      "externalMB": 11.48,
+      "arrayBuffersMB": 0.28,
+      "serverDocsInMemory": 285,
+      "serverDocSynchronizers": 285
+    },
+    {
+      "round": 19,
+      "totalDocsCreated": 300,
+      "heapUsedMB": 32.41,
+      "rssMB": 164.89,
+      "externalMB": 11.79,
+      "arrayBuffersMB": 0.29,
+      "serverDocsInMemory": 300,
+      "serverDocSynchronizers": 300
+    },
+    {
+      "round": 20,
+      "totalDocsCreated": 315,
+      "heapUsedMB": 32.01,
+      "rssMB": 164.88,
+      "externalMB": 12.05,
+      "arrayBuffersMB": 0.3,
+      "serverDocsInMemory": 315,
+      "serverDocSynchronizers": 315
+    },
+    {
+      "round": 21,
+      "totalDocsCreated": 330,
+      "heapUsedMB": 32.36,
+      "rssMB": 165.88,
+      "externalMB": 12.37,
+      "arrayBuffersMB": 0.31,
+      "serverDocsInMemory": 330,
+      "serverDocSynchronizers": 330
+    },
+    {
+      "round": 22,
+      "totalDocsCreated": 345,
+      "heapUsedMB": 32.78,
+      "rssMB": 167.13,
+      "externalMB": 12.63,
+      "arrayBuffersMB": 0.32,
+      "serverDocsInMemory": 345,
+      "serverDocSynchronizers": 345
+    },
+    {
+      "round": 23,
+      "totalDocsCreated": 360,
+      "heapUsedMB": 33.11,
+      "rssMB": 167.38,
+      "externalMB": 12.95,
+      "arrayBuffersMB": 0.33,
+      "serverDocsInMemory": 360,
+      "serverDocSynchronizers": 360
+    }
+  ]
+}
