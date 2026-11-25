@@ -563,9 +563,6 @@ class GatedStorageAdapter extends DummyStorageAdapter {
     remove?: Promise<void>
   } = {}
 
-  /** Number of remove() calls made, including any still held. */
-  removesStarted = 0
-
   /** Hold only the removeRange() of this chunk type, if set. */
   removeRangeType?: string
 
@@ -587,7 +584,6 @@ class GatedStorageAdapter extends DummyStorageAdapter {
   removeStarted = Promise.withResolvers<void>()
 
   async remove(key: string[]): Promise<void> {
-    this.removesStarted++
     this.removeStarted.resolve()
     await this.gates.remove
     return super.remove(key)
@@ -705,16 +701,13 @@ describe("StorageSubsystem removal in flight", () => {
       documentId,
       A.change(d1, d => (d.foo = "baz"))
     )
-    await pause()
-    assert.equal(
-      adapter.removesStarted,
-      1,
-      "the old snapshot's remove() is held"
-    )
+    await adapter.removeStarted.promise // the old snapshot's remove() is held
 
     const removal = storage.removeDoc(documentId)
     const reimport = removal.then(() => storage.saveDoc(documentId, d1))
-    await pause() // a removal that doesn't wait lets the re-import land here
+    // Storage here settles in microtasks, so one macrotask is enough for a
+    // removal that doesn't wait to let the re-import land.
+    await pause()
     gate.resolve()
     await Promise.all([compaction, removal, reimport])
 
