@@ -305,6 +305,8 @@ export class StorageSubsystem extends EventEmitter<StorageSubsystemEvents> {
    * document. The next load rebuilds both from storage, and a save without
    * them writes a full snapshot instead of an incremental. A save already in
    * flight leaves its chunk untracked, so a later compaction can't delete it.
+   *
+   * @hidden
    */
   forget(documentId: DocumentId): void {
     this.#storedHeads.delete(documentId)
