@@ -624,6 +624,11 @@ describe("StorageSubsystem removal in flight", () => {
     await storage.removeDoc(documentId)
     gate.release()
     await load
+    assert.equal(
+      storage[kTrackedDocuments],
+      0,
+      "the late load tracks no chunks"
+    )
 
     adapter.gates.loadRange = undefined
     await storage.saveDoc(documentId, doc)

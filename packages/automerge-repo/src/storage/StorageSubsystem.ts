@@ -148,6 +148,7 @@ export class StorageSubsystem extends EventEmitter<StorageSubsystemEvents> {
    * Loads and combines document chunks from storage, with snapshots first.
    */
   async loadDocData(documentId: DocumentId): Promise<Uint8Array | null> {
+    const generation = this.#chunkGeneration(documentId)
     // Load snapshots first
     const snapshotChunks = await this.#storageAdapter.loadRange([
       documentId,
@@ -183,12 +184,17 @@ export class StorageSubsystem extends EventEmitter<StorageSubsystemEvents> {
       binaries.push(chunk.data)
     }
 
-    // A missing entry reads as "no chunks", so a document storage doesn't
-    // hold leaves no entry behind; otherwise every id ever looked up would.
-    if (chunkInfos.length > 0) {
-      this.#chunkInfos.set(documentId, chunkInfos)
-    } else {
-      this.#chunkInfos.delete(documentId)
+    // A removal or reset during the load leaves the chunk list to whoever
+    // changed the generation.
+    if (this.#chunkGenerations.get(documentId) === generation) {
+      // A missing entry reads as "no chunks", so a document storage doesn't
+      // hold leaves no entry behind; otherwise every id ever looked up would.
+      if (chunkInfos.length > 0) {
+        this.#chunkInfos.set(documentId, chunkInfos)
+      } else {
+        this.#chunkInfos.delete(documentId)
+        this.#chunkGenerations.delete(documentId)
+      }
     }
 
     // If no chunks were found, return null
