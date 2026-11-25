@@ -49,8 +49,9 @@ export class StorageSubsystem extends EventEmitter<StorageSubsystemEvents> {
   /**
    * Changes when {@link StorageSubsystem.saveDoc} stops tracking a document's
    * chunks or {@link StorageSubsystem.forget} drops them. Saves begun under an
-   * earlier generation leave the chunk list alone. Values come from one counter
-   * for all documents, so they never repeat even after an entry is removed.
+   * earlier generation leave the chunk list and saved heads alone. Values come
+   * from one counter for all documents, so they never repeat even after an
+   * entry is removed.
    */
   #chunkGenerations: Map<DocumentId, number> = new Map()
   #lastChunkGeneration = 0
@@ -211,6 +212,7 @@ export class StorageSubsystem extends EventEmitter<StorageSubsystemEvents> {
    */
   async loadDoc<T>(documentId: DocumentId): Promise<A.Doc<T> | null> {
     const headsHandle = this.#storedHeads.lastSavedHeads(documentId)
+    const generation = this.#chunkGeneration(documentId)
     // Load and combine chunks
     const binary = await this.loadDocData(documentId)
     if (!binary) return null
@@ -225,8 +227,11 @@ export class StorageSubsystem extends EventEmitter<StorageSubsystemEvents> {
       ...A.stats(newDoc),
     })
 
-    // Record the latest heads for the document
-    headsHandle.update(A.getHeads(newDoc))
+    // Record the latest heads for the document, unless a removal or reset
+    // overtook the load
+    if (this.#chunkGenerations.get(documentId) === generation) {
+      headsHandle.update(A.getHeads(newDoc))
+    }
 
     return newDoc
   }
@@ -385,8 +390,8 @@ export class StorageSubsystem extends EventEmitter<StorageSubsystemEvents> {
           type: "incremental",
           size: binary.length,
         })
+        headsHandle.update(A.getHeads(doc))
       }
-      headsHandle.update(A.getHeads(doc))
     } else {
       return Promise.resolve()
     }
@@ -439,8 +444,8 @@ export class StorageSubsystem extends EventEmitter<StorageSubsystemEvents> {
         newChunkInfos.push({ key, type: "snapshot", size: binary.length })
 
         this.#chunkInfos.set(documentId, newChunkInfos)
+        headsHandle.update(A.getHeads(doc))
       }
-      headsHandle.update(A.getHeads(doc))
     } finally {
       this.#compacting = false
     }
