@@ -22,10 +22,15 @@ export class StorageSource implements DocumentSource {
     (payload: DocHandleEncodedChangePayload<any>) => void
   > = {}
   /**
-   * Number of live save listeners per document. Clusters normally share one;
-   * detach() stops that sharing, so an older cluster may outlive a re-attach.
+   * Number of live save listeners per document. Usually one; after
+   * removeFromCache() or delete(), a handle kept by the app still holds the
+   * old listener while finding the id again makes a new one.
    */
   #liveSaveFns = new Map<DocumentId, number>()
+  /**
+   * Forgets a document's storage bookkeeping once its last save listener is
+   * collected. Holds the id, not the listener; collection is best-effort.
+   */
   #forgetOnCollect = new FinalizationRegistry<DocumentId>(documentId => {
     const live = (this.#liveSaveFns.get(documentId) ?? 1) - 1
     if (live > 0) {
@@ -108,7 +113,8 @@ export class StorageSource implements DocumentSource {
           doc,
           handle,
         }: DocHandleEncodedChangePayload<any>): Promise<void> => {
-          // A throttled save must not write a deleted document back.
+          // Skip a throttled save that hasn't started by the time the document
+          // is deleted. A write already in flight still lands.
           if (handle.isDeleted()) return
           try {
             await this.#storage.saveDoc(handle.documentId, doc)
