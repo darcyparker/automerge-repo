@@ -566,8 +566,20 @@ class GatedStorageAdapter extends DummyStorageAdapter {
   /** Number of remove() calls made, including any still held. */
   removesStarted = 0
 
+  /** Hold only the removeRange() of this chunk type, if set. */
+  removeRangeType?: string
+
+  /** Resolves when a held removeRange() starts. */
+  removeRangeHeld = Promise.withResolvers<void>()
+
   async removeRange(keyPrefix: string[]): Promise<void> {
-    await this.gates.removeRange
+    if (
+      this.removeRangeType === undefined ||
+      keyPrefix[1] === this.removeRangeType
+    ) {
+      this.removeRangeHeld.resolve()
+      await this.gates.removeRange
+    }
     return super.removeRange(keyPrefix)
   }
 
@@ -585,12 +597,6 @@ class GatedStorageAdapter extends DummyStorageAdapter {
   }
 }
 
-const deferred = () => {
-  let release!: () => void
-  const promise = new Promise<void>(resolve => (release = resolve))
-  return { promise, release }
-}
-
 describe("StorageSubsystem removal in flight", () => {
   it("persists a document re-imported and saved while its removal is pending", async () => {
     const adapter = new GatedStorageAdapter()
@@ -599,14 +605,34 @@ describe("StorageSubsystem removal in flight", () => {
     const doc = A.from({ foo: "bar" })
     await storage.saveDoc(documentId, doc)
 
-    const gate = deferred()
+    const gate = Promise.withResolvers<void>()
     adapter.gates.removeRange = gate.promise
     const removal = storage.removeDoc(documentId)
     await storage.saveDoc(documentId, doc) // re-import, flushed mid-removal
-    gate.release()
+    gate.resolve()
     await removal
 
     await storage.saveDoc(documentId, doc)
+    const reloaded = await new StorageSubsystem(adapter).loadDoc(documentId)
+    assert.deepStrictEqual(reloaded, doc)
+  })
+
+  it("persists a re-import saved after the removal deleted the snapshots", async () => {
+    const adapter = new GatedStorageAdapter()
+    const storage = new StorageSubsystem(adapter)
+    const documentId = parseAutomergeUrl(generateAutomergeUrl()).documentId
+    const doc = A.from({ foo: "bar" })
+    await storage.saveDoc(documentId, doc)
+
+    const gate = Promise.withResolvers<void>()
+    adapter.gates.removeRange = gate.promise
+    adapter.removeRangeType = "incremental"
+    const removal = storage.removeDoc(documentId)
+    await adapter.removeRangeHeld.promise // the snapshots are gone
+    await storage.saveDoc(documentId, doc) // re-import
+    gate.resolve()
+    await removal
+
     const reloaded = await new StorageSubsystem(adapter).loadDoc(documentId)
     assert.deepStrictEqual(reloaded, doc)
   })
@@ -618,11 +644,11 @@ describe("StorageSubsystem removal in flight", () => {
     const doc = A.from({ foo: "bar" })
     await storage.saveDoc(documentId, doc)
 
-    const gate = deferred()
+    const gate = Promise.withResolvers<void>()
     adapter.gates.loadRange = gate.promise
     const load = storage.loadDoc(documentId) // has read, has not returned
     await storage.removeDoc(documentId)
-    gate.release()
+    gate.resolve()
     await load
     assert.equal(
       storage[kTrackedDocuments],
@@ -646,7 +672,7 @@ describe("StorageSubsystem removal in flight", () => {
     const d1 = A.from({ foo: "bar" })
     await storage.saveDoc(documentId, d1)
 
-    const gate = deferred()
+    const gate = Promise.withResolvers<void>()
     adapter.gates.remove = gate.promise
     const compaction = storage.saveDoc(
       documentId,
@@ -654,7 +680,7 @@ describe("StorageSubsystem removal in flight", () => {
     )
     await storage.removeDoc(documentId)
     await storage.saveDoc(documentId, d1) // re-import
-    gate.release()
+    gate.resolve()
     await compaction
 
     adapter.gates.remove = undefined
@@ -669,7 +695,7 @@ describe("StorageSubsystem removal in flight", () => {
     const d1 = A.from({ foo: "bar" })
     await storage.saveDoc(documentId, d1)
 
-    const gate = deferred()
+    const gate = Promise.withResolvers<void>()
     adapter.gates.remove = gate.promise
     const compaction = storage.saveDoc(
       documentId,
@@ -685,7 +711,7 @@ describe("StorageSubsystem removal in flight", () => {
     const removal = storage.removeDoc(documentId)
     const reimport = removal.then(() => storage.saveDoc(documentId, d1))
     await pause() // a removal that doesn't wait lets the re-import land here
-    gate.release()
+    gate.resolve()
     await Promise.all([compaction, removal, reimport])
 
     adapter.gates.remove = undefined
